@@ -1,5 +1,7 @@
 name: build
 on: workflow_dispatch
+permissions:
+  contents: write
 jobs:
   win:
     runs-on: windows-latest
@@ -29,15 +31,19 @@ jobs:
       - name: Установка зависимостей
         id: npm
         run: npm install 2>&1 | tee logs/3-npm.log
-      - name: Сборка установщика
+      - name: Версия
+        run: npm version "0.2.${{ github.run_number }}" --no-git-tag-version
+      - name: Сборка и публикация в Releases
         id: dist
-        run: npx electron-builder --win nsis --publish never 2>&1 | tee logs/4-installer.log
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --win nsis --publish always -c.publish.owner=${{ github.repository_owner }} -c.publish.repo=${{ github.event.repository.name }} 2>&1 | tee logs/4-installer.log
       - uses: actions/upload-artifact@v4
         with: {name: MultiBrowser-Setup, path: dist/*.exe}
       - name: Готово
         run: |
           {
-            echo "## Сборка успешна. Установщик MultiBrowser-Setup лежит внизу страницы в разделе Artifacts."
+            echo "## Сборка успешна. Установщик лежит в разделе Releases справа на главной странице репозитория (и внизу этой страницы в Artifacts)."
             echo "SHA256 wireproxy.exe (для проверки на VirusTotal): $(sha256sum resources/wireproxy.exe | cut -d' ' -f1)"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Отчёт об ошибке
