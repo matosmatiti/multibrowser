@@ -15,12 +15,13 @@ jobs:
         with: {go-version: '1.24'}
       - name: VPN-туннель (awg-wireproxy)
         id: vpn
-        env: {WIREPROXY_REF: v1.2.5}
+        env: {WIREPROXY_COMMIT: 4d15c1fe429af1214b9f4a38f7ef49ae966c5b8a}
         run: |
           {
-            git clone --depth 1 --branch "$WIREPROXY_REF" https://github.com/bropines/awg-wireproxy.git wp
+            git clone --no-checkout https://github.com/bropines/awg-wireproxy.git wp
             cd wp
-            GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../resources/wireproxy.exe ./cmd/wireproxy
+            git checkout "$WIREPROXY_COMMIT"
+            GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ../resources/wireproxy.exe ./cmd/wireproxy
           } 2>&1 | tee logs/1-vpn-tunnel.log
       - name: Движок
         id: engine
@@ -34,7 +35,11 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: {name: MultiBrowser-Setup, path: dist/*.exe}
       - name: Готово
-        run: echo "## Сборка успешна. Установщик MultiBrowser-Setup лежит внизу страницы в разделе Artifacts." >> "$GITHUB_STEP_SUMMARY"
+        run: |
+          {
+            echo "## Сборка успешна. Установщик MultiBrowser-Setup лежит внизу страницы в разделе Artifacts."
+            echo "SHA256 wireproxy.exe (для проверки на VirusTotal): $(sha256sum resources/wireproxy.exe | cut -d' ' -f1)"
+          } >> "$GITHUB_STEP_SUMMARY"
       - name: Отчёт об ошибке
         if: failure()
         env:
