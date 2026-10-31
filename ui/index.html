@@ -5,7 +5,7 @@
 :root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--g:#1a8f5a;--h:#e4e7ef}
 @media(prefers-color-scheme:dark){:root{--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--g:#3ecf8e;--h:#222836}}
 body{margin:0;font:13px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--t)}
-header,#form{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--b)}#form{background:var(--p)}
+header,#form,#edit{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--b)}#form,#edit{background:var(--p)}
 h1{font-size:18px;margin:0 12px 0 0}#q{flex:1;min-width:180px}
 input,select,button{font:inherit;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:6px;padding:6px 10px}
 button.p{background:var(--a);border-color:var(--a);color:#0b1220;font-weight:600}
@@ -18,6 +18,7 @@ button:hover:not(:disabled){background:var(--h)}
 button.p:hover:not(:disabled){background:var(--a);filter:brightness(1.12)}
 button:active:not(:disabled){transform:scale(.95);filter:brightness(.9)}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a);outline-offset:1px}
+[hidden]{display:none!important}
 </style></head><body>
 <header><h1>Профили</h1><input id="q" type="search" placeholder="Поиск по профилям…" aria-label="Поиск"><button class="p" id="new">+ Новый профиль</button></header>
 <section id="form" hidden>
@@ -27,6 +28,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 <button id="pick" hidden>Выбрать .conf</button><span id="cf" class="m"></span>
 <button class="p" id="add">Создать</button><button id="cancel">Отмена</button>
 </section>
+<section id="edit" hidden><b>Настройки профиля</b>
+<input id="en" placeholder="Название профиля" aria-label="Название профиля">
+<span class="m">Папка загрузок:</span><input id="ed" readonly size="38" aria-label="Папка загрузок"><button id="epick">Выбрать…</button><button id="ereset">По умолчанию</button>
+<button class="p" id="esave">Сохранить</button><button id="ecancel">Отмена</button></section>
 <table><thead><tr><th>ПРОФИЛЬ</th><th>ПОДКЛЮЧЕНИЕ</th><th>УСИЛЕННЫЙ РЕЖИМ</th><th></th></tr></thead><tbody id="rows"></tbody></table>
 <div id="none"></div>
 <script src="renderer.js"></script></body></html>

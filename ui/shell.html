@@ -28,12 +28,21 @@ button.p:hover:not(:disabled){background:var(--a);filter:brightness(1.12)}
 button:active:not(:disabled){transform:scale(.95);filter:brightness(.9)}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a);outline-offset:1px}
 #updt{color:var(--a);font-size:12px;white-space:nowrap}#updbar{position:absolute;left:0;right:0;top:79px;height:3px;background:var(--b)}#updbar[hidden]{display:none}#updbar div{height:100%;width:0;background:var(--a);transition:width .2s}body.side #updbar{left:240px;top:39px}
+[hidden]{display:none!important}
+#dl{position:relative}#dl.act{color:var(--a)}#dlb{position:absolute;left:6px;right:6px;bottom:1px;height:3px;border-radius:2px;background:var(--a);transform-origin:left;transform:scaleX(0);transition:transform .2s}
+#findbox{flex:1;display:flex;gap:6px;align-items:center}#fq{flex:1;height:30px;border:1px solid var(--b);border-radius:15px;background:var(--p);padding:0 14px;user-select:text;-webkit-app-region:no-drag}#fc{color:var(--m);min-width:36px;text-align:center}
+#star{font-size:15px}#star.on{color:#f5b301}
+#bmbar{position:absolute;left:0;right:0;top:82px;height:30px;display:flex;gap:2px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b);overflow:hidden}
+body.side #bmbar{left:240px;top:42px}.bm{max-width:170px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:2px 8px}
+body.bm #empty{top:112px}body.side.bm #empty{top:72px}
 </style></head><body>
 <div id="top"><div id="tabs"></div><button id="plus" title="Новая вкладка">+</button><div id="grab"></div></div>
 <div id="side"><div id="brand">MultiBrowser</div><div id="groups"></div></div>
 <div id="bar"><button id="back" title="Назад">◀</button><button id="fwd" title="Вперёд">▶</button><button id="rl" title="Обновить">⟳</button>
-<input id="addr" aria-label="Адресная строка" placeholder="Введи адрес или поисковый запрос">
-<span id="updt" hidden></span><button id="mode" title="Переключить вид: вкладки сверху / боковая панель">▤ Вид</button><button id="mgr">Профили</button><button id="set" title="Настройки" aria-label="Настройки">⚙</button></div>
+<input id="addr" aria-label="Адресная строка" placeholder="Введи адрес или поисковый запрос"><button id="star" title="В закладки (Ctrl+D)" aria-label="В закладки">☆</button>
+<span id="findbox" hidden><input id="fq" placeholder="Найти на странице" aria-label="Поиск на странице"><span id="fc"></span><button id="fp" title="Предыдущее">▲</button><button id="fn" title="Следующее">▼</button><button id="fx" title="Закрыть">✕</button></span>
+<span id="updt" hidden></span><button id="dl" title="Загрузки (Ctrl+J)" aria-label="Загрузки">⬇<i id="dlb"></i></button><button id="mode" title="Переключить вид: вкладки сверху / боковая панель">▤ Вид</button><button id="mgr">Профили</button><button id="set" title="Настройки" aria-label="Настройки">⚙</button><button id="menu" title="Меню" aria-label="Меню">⋮</button></div>
+<div id="bmbar" hidden></div>
 <div id="updbar" hidden><div></div></div>
 <div id="empty">Нет открытых вкладок.<br>Нажми «+» и выбери профиль, либо открой «Профили».</div>
 <script src="shell.js"></script></body></html>
