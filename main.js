@@ -1,12 +1,12 @@
 // MultiBrowser: своя оболочка (вкладки разных аккаунтов в одном окне) + усиленный режим (движок fingerprint-chromium отдельным окном)
-const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog}=require('electron');
+const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme}=require('electron');
 const path=require('path'),fs=require('fs'),net=require('net'),crypto=require('crypto');
 const {spawn}=require('child_process');
 const RES=app.isPackaged?process.resourcesPath:path.join(__dirname,'resources');
 const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json');
 const START='https://ipinfo.io/', SEARCH='https://duckduckgo.com/?q=';
 const running=new Map(),tunnels=new Map(),tabs=[];
-let win,ui,mgr,active=null,mode='top',nextId=1;
+let win,active=null,mode='top',nextId=1;
 const load=()=>{try{return JSON.parse(fs.readFileSync(FILE(),'utf8'))}catch{return[]}};
 const save=l=>fs.writeFileSync(FILE(),JSON.stringify(l,null,1));
 const prof=id=>load().find(p=>p.id===id);
@@ -22,8 +22,8 @@ const kill=c=>{try{c&&c.pid&&spawn('taskkill',['/pid',String(c.pid),'/T','/F'],{
 function cleanup(j){kill(j.wp);if(j.conf)try{fs.rmSync(j.conf,{force:true})}catch{}}
 const PAL=['#ff7a59','#4c8dff','#3ecf8e','#b58cff','#ffc247','#ff6b9a','#2ec4c4','#9aa5b8'];
 const colorOf=id=>PAL[parseInt(id.replace(/-/g,'').slice(0,6),16)%PAL.length];
-const pushMgr=()=>{if(mgr&&!mgr.isDestroyed())mgr.webContents.send('state',[...running.keys()])};
-const view=()=>load().map(p=>({id:p.id,name:p.name,kind:p.vpn?'VPN-конфиг':p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси'}));
+const pushMgr=()=>{const t=tabs.find(x=>x.kind==='manager');if(t&&!t.view.webContents.isDestroyed())t.view.webContents.send('state',[...running.keys()])};
+const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),kind:p.vpn?'VPN-конфиг':p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси'}));
 
 // ---------- туннель VPN-конфига (общий для всех вкладок одного профиля) ----------
 async function makeTunnel(p,tag){
@@ -43,18 +43,18 @@ function dropTunnel(id,force){const t=tunnels.get(id);if(!t)return;if(!force&&--
 
 // ---------- оболочка: вкладки ----------
 function layout(){
- if(!win||!ui)return;const b=win.getContentBounds(),W=b.width,H=b.height;
- ui.setBounds({x:0,y:0,width:W,height:H});
- const x=mode==='side'?240:0,y=mode==='side'?42:80;
+ if(!win||win.isDestroyed())return;const b=win.getContentBounds(),W=b.width,H=b.height;
+ const x=mode==='side'?240:0,y=mode==='side'?42:82;
  for(const t of tabs){const on=t.id===active;t.view.setVisible(on);if(on)t.view.setBounds({x,y,width:Math.max(W-x,1),height:Math.max(H-y,1)})}
 }
 function pushTabs(){
- if(!ui||ui.webContents.isDestroyed())return;
- const t=tabs.find(x=>x.id===active),nh=t?t.view.webContents.navigationHistory:null,all=load();
- const nm=id=>(all.find(p=>p.id===id)||{name:'?'}).name;
- ui.webContents.send('tabs',{mode,active,url:t?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
-  profiles:[...new Set(tabs.map(x=>x.pid))].map(id=>({id,name:nm(id),color:colorOf(id)})),
-  tabs:tabs.map(x=>({id:x.id,pid:x.pid,title:x.title||x.url||'Новая вкладка',color:colorOf(x.pid),letter:nm(x.pid)[0].toUpperCase()}))});
+ if(!win||win.isDestroyed()||win.webContents.isDestroyed())return;
+ const t=tabs.find(x=>x.id===active),pg=t&&t.kind!=='manager',nh=pg?t.view.webContents.navigationHistory:null,all=load();
+ const nm=id=>id==='_mgr'?'Профили':(all.find(p=>p.id===id)||{name:'?'}).name;
+ const col=id=>id==='_mgr'?'#8b93a5':colorOf(id);
+ win.webContents.send('tabs',{mode,active,url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
+  profiles:[...new Set(tabs.map(x=>x.pid))].map(id=>({id,name:nm(id),color:col(id)})),
+  tabs:tabs.map(x=>({id:x.id,pid:x.pid,title:x.kind==='manager'?'Профили':(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind==='manager'?'☰':nm(x.pid)[0].toUpperCase()}))});
 }
 async function newTab(pid,url){
  const p=prof(pid);if(!p)return;
@@ -101,7 +101,7 @@ async function launch(id){
 
 // ---------- IPC ----------
 ipcMain.handle('list',()=>({profiles:view(),running:[...running.keys()]}));
-ipcMain.handle('pickConf',async()=>{const r=await dialog.showOpenDialog(mgr,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
+ipcMain.handle('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
  return r.canceled?null:{name:path.basename(r.filePaths[0]),text:fs.readFileSync(r.filePaths[0],'utf8')}});
 ipcMain.handle('add',(e,d)=>{const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};
  if(d.mode==='vpn'&&d.confText)p.vpn=enc(d.confText);else if(d.mode==='proxy'&&d.host)p.proxy={type:d.type,host:d.host,port:d.port};
@@ -110,7 +110,7 @@ ipcMain.handle('launch',async(e,id)=>{try{await launch(id);return null}catch(x){
 ipcMain.handle('stop',(e,id)=>{const j=running.get(id);if(j)kill(j.chrome)});
 ipcMain.handle('remove',(e,id)=>{for(const t of tabs.filter(x=>x.pid===id))closeTab(t.id);
  const j=running.get(id);if(j){kill(j.chrome);cleanup(j);running.delete(id)}save(load().filter(p=>p.id!==id))});
-ipcMain.handle('openInShell',(e,id)=>{newTab(id);if(win)win.focus()});
+ipcMain.handle('openInShell',(e,id)=>newTab(id));
 ipcMain.handle('newTab',(e,id)=>newTab(id));
 ipcMain.handle('newTabMenu',()=>{const l=load();
  const items=l.length?l.map(p=>({label:p.name,click:()=>newTab(p.id)})):[{label:'Сначала создай профиль (кнопка «Профили»)',enabled:false}];
@@ -118,20 +118,25 @@ ipcMain.handle('newTabMenu',()=>{const l=load();
  Menu.buildFromTemplate(items).popup()});
 ipcMain.handle('activate',(e,id)=>{active=id;layout();pushTabs()});
 ipcMain.handle('closeTab',(e,id)=>closeTab(id));
-ipcMain.handle('navigate',(e,s)=>{const t=tabs.find(x=>x.id===active);if(t)t.view.webContents.loadURL(norm(s))});
-ipcMain.handle('nav',(e,a)=>{const t=tabs.find(x=>x.id===active);if(!t)return;const h=t.view.webContents.navigationHistory;
+ipcMain.handle('navigate',(e,s)=>{const t=tabs.find(x=>x.id===active);if(t&&t.kind!=='manager')t.view.webContents.loadURL(norm(s))});
+ipcMain.handle('nav',(e,a)=>{const t=tabs.find(x=>x.id===active);if(!t||t.kind==='manager')return;const h=t.view.webContents.navigationHistory;
  if(a==='back')h.goBack();else if(a==='forward')h.goForward();else t.view.webContents.reload()});
 ipcMain.handle('setMode',(e,m)=>{mode=m==='side'?'side':'top';layout();pushTabs()});
-ipcMain.handle('openManager',()=>{if(mgr&&!mgr.isDestroyed()){mgr.focus();return}
- mgr=new BrowserWindow({width:1000,height:640,title:'MultiBrowser: профили',backgroundColor:'#12151c',autoHideMenuBar:true,
-  webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});mgr.loadFile('ui/index.html')});
-
+function openManager(){   // страница «Профили» открывается как вкладка внутри оболочки
+ const ex=tabs.find(x=>x.kind==='manager');if(ex){active=ex.id;layout();pushTabs();return}
+ const v=new WebContentsView({webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
+ const t={id:nextId++,pid:'_mgr',kind:'manager',view:v,title:'Профили',url:''};tabs.push(t);
+ win.contentView.addChildView(v);active=t.id;v.webContents.loadFile('ui/index.html');layout();pushTabs();
+}
+ipcMain.handle('openManager',()=>openManager());
+const ovl=()=>{const d=nativeTheme.shouldUseDarkColors;return{color:d?'#181c25':'#f3f4f7',symbolColor:d?'#e6e9f0':'#1b1f2a',height:40}};
 app.whenReady().then(()=>{
  Menu.setApplicationMenu(null);
- win=new BaseWindow({width:1280,height:800,title:'MultiBrowser',backgroundColor:'#12151c'});
- ui=new WebContentsView({webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
- win.contentView.addChildView(ui);ui.webContents.loadFile('ui/shell.html');
- ui.webContents.on('did-finish-load',()=>{layout();pushTabs()});
+ win=new BrowserWindow({width:1280,height:800,title:'MultiBrowser',backgroundColor:'#12151c',titleBarStyle:'hidden',titleBarOverlay:ovl(),
+  webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
+ win.loadFile('ui/shell.html');
+ win.webContents.on('did-finish-load',()=>{layout();pushTabs();if(!load().length)openManager()});
+ nativeTheme.on('updated',()=>{try{win.setTitleBarOverlay(ovl())}catch{}});
  for(const ev of ['resize','maximize','unmaximize','enter-full-screen','leave-full-screen'])win.on(ev,layout);
  win.on('closed',()=>app.quit());
 });

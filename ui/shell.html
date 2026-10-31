@@ -5,24 +5,28 @@
 :root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--h:#e4e7ef}
 @media(prefers-color-scheme:dark){:root{--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--h:#222836}}
 *{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;font:13px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--t);user-select:none}
-button,input{font:inherit;color:var(--t)}button{background:none;border:0;border-radius:6px;padding:4px 8px;cursor:pointer}button:hover:not(:disabled){background:var(--h)}button:disabled{opacity:.35}
-#tabs{position:absolute;left:0;right:0;top:0;height:38px;display:flex;gap:2px;align-items:flex-end;padding:0 6px;background:var(--p);border-bottom:1px solid var(--b);overflow:hidden}
-#bar{position:absolute;left:0;right:0;top:38px;height:42px;display:flex;gap:6px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b)}
-#addr{flex:1;height:30px;border:1px solid var(--b);border-radius:15px;background:var(--p);padding:0 14px;user-select:text}
-#side{position:absolute;left:0;top:0;bottom:0;width:240px;background:var(--p);border-right:1px solid var(--b);overflow:auto;padding:8px;display:none}
-body.side #tabs{display:none}body.side #side{display:block}body.side #bar{left:240px;top:0}
-.tab{display:flex;align-items:center;gap:6px;height:32px;min-width:0;max-width:210px;flex:0 1 210px;padding:0 6px 0 8px;border-radius:8px 8px 0 0;border-top:3px solid var(--c);cursor:pointer;color:var(--m)}
+button,input{font:inherit;color:var(--t)}button{background:none;border:0;border-radius:6px;padding:4px 8px;cursor:pointer;-webkit-app-region:no-drag}button:hover:not(:disabled){background:var(--h)}button:disabled{opacity:.35}
+#top{position:absolute;left:0;right:0;top:0;height:40px;display:flex;align-items:flex-end;gap:2px;padding:0 150px 0 8px;background:var(--p);-webkit-app-region:drag}
+#tabs{display:flex;gap:2px;align-items:flex-end;min-width:0;flex:0 1 auto;overflow:hidden}#grab{flex:1;height:100%}
+#plus{margin-bottom:4px;font-size:16px}
+#bar{position:absolute;left:0;right:0;top:40px;height:42px;display:flex;gap:6px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b)}
+#addr{flex:1;height:30px;border:1px solid var(--b);border-radius:15px;background:var(--p);padding:0 14px;user-select:text;-webkit-app-region:no-drag}
+#side{position:absolute;left:0;top:0;bottom:0;width:240px;background:var(--p);border-right:1px solid var(--b);overflow:auto;padding:0 8px 8px;display:none}
+#brand{height:40px;display:flex;align-items:center;font-weight:600;margin:0 -8px;padding:0 12px;-webkit-app-region:drag}
+body.side #top{display:none}body.side #side{display:block}body.side #bar{left:240px;top:0;padding-right:150px;-webkit-app-region:drag}
+.tab{display:flex;align-items:center;gap:6px;height:32px;min-width:48px;max-width:210px;flex:0 1 210px;padding:0 6px 0 8px;border-radius:8px 8px 0 0;border-top:3px solid var(--c);cursor:pointer;color:var(--m);-webkit-app-region:no-drag}
 .tab.act{background:var(--bg);color:var(--t)}.tab:hover{background:var(--h)}
 .dot{flex:none;width:18px;height:18px;border-radius:5px;background:var(--c);color:#0b0f17;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center}
 .ttl{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.x{padding:0 6px}
 .gh{display:flex;align-items:center;gap:6px;margin:10px 4px 4px;font-weight:600}.gh .dot{width:20px;height:20px}.gh span:nth-child(2){flex:1}
 body.side .tab{border-top:0;border-left:3px solid var(--c);border-radius:6px;max-width:none;margin:1px 0}
-#empty{position:absolute;left:0;right:0;top:80px;bottom:0;display:flex;align-items:center;justify-content:center;color:var(--m);text-align:center;padding:20px}
+#empty{position:absolute;left:0;right:0;top:82px;bottom:0;display:flex;align-items:center;justify-content:center;color:var(--m);text-align:center;padding:20px}
 body.side #empty{left:240px;top:42px}
 </style></head><body>
-<div id="tabs"></div><div id="side"></div>
+<div id="top"><div id="tabs"></div><button id="plus" title="Новая вкладка">+</button><div id="grab"></div></div>
+<div id="side"><div id="brand">MultiBrowser</div><div id="groups"></div></div>
 <div id="bar"><button id="back" title="Назад">◀</button><button id="fwd" title="Вперёд">▶</button><button id="rl" title="Обновить">⟳</button>
 <input id="addr" aria-label="Адресная строка" placeholder="Введи адрес или поисковый запрос">
 <button id="mode" title="Переключить вид: вкладки сверху / боковая панель">▤ Вид</button><button id="mgr">Профили</button></div>
-<div id="empty">Нет открытых вкладок.<br>Нажми «+» и выбери профиль, либо открой «Профили» и создай новый.</div>
+<div id="empty">Нет открытых вкладок.<br>Нажми «+» и выбери профиль, либо открой «Профили».</div>
 <script src="shell.js"></script></body></html>
