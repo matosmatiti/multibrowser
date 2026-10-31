@@ -1,0 +1,22 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>MultiBrowser</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--g:#1a8f5a}
+@media(prefers-color-scheme:dark){:root{--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--g:#3ecf8e}}
+body{margin:0;font:13px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--t)}
+header{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:14px 16px;background:var(--p);border-bottom:1px solid var(--b)}
+input,select,button{font:inherit;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:6px;padding:6px 10px}
+button.p{background:var(--a);border-color:var(--a);color:#0b1220;font-weight:600}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 16px;border-bottom:1px solid var(--b)}
+th{color:var(--m);font-size:11px;font-weight:600}.on{color:var(--g)}.m{color:var(--m)}
+</style></head><body>
+<header>
+<input id="n" placeholder="Название профиля" aria-label="Название профиля">
+<select id="mode" aria-label="Подключение"><option value="none">Без прокси</option><option value="proxy">Прокси</option><option value="vpn">VPN-конфиг (.conf)</option></select>
+<span id="px" hidden><select id="ty" aria-label="Тип"><option>socks5</option><option>http</option></select> <input id="h" placeholder="host" size="14"> <input id="po" placeholder="порт" size="5"></span>
+<button id="pick" hidden>Выбрать .conf</button><span id="cf" class="m"></span>
+<button class="p" id="add">+ Создать профиль</button>
+</header>
+<table><thead><tr><th>ПРОФИЛЬ</th><th>ПОДКЛЮЧЕНИЕ</th><th>СТАТУС</th><th></th></tr></thead><tbody id="rows"></tbody></table>
+<script src="renderer.js"></script></body></html>
