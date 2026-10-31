@@ -1,1 +1,25 @@
-
+name: build
+on: workflow_dispatch
+jobs:
+  win:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - uses: actions/setup-go@v5
+        with: {go-version: '1.24'}
+      - name: VPN-туннель (wireproxy-awg)
+        shell: bash
+        env: {WIREPROXY_REF: v1.2.5}
+        run: |
+          git clone https://github.com/bropines/wireproxy-awg.git wp
+          cd wp && git checkout "$WIREPROXY_REF"
+          mkdir -p ../resources
+          GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -ldflags="-s -w" -o ../resources/wireproxy.exe ./cmd/wireproxy
+      - name: Движок
+        run: node scripts/fetch-engine.mjs
+      - run: npm install
+      - run: npm run dist
+      - uses: actions/upload-artifact@v4
+        with: {name: MultiBrowser-Setup, path: dist/*.exe}
