@@ -5,7 +5,16 @@ const {spawn}=require('child_process');
 const {autoUpdater}=require('electron-updater');
 const RES=app.isPackaged?process.resourcesPath:path.join(__dirname,'resources');
 const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json');
-const START='https://www.google.com/', SEARCH='https://www.google.com/search?q=';
+const SETF=()=>path.join(app.getPath('userData'),'settings.json');
+const DEF={search:'google',home:'google',customHome:'',theme:'system',restore:true,autoUpdate:true};
+const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q=',yandex:'https://yandex.ru/search/?text='};
+let cfg={...DEF},manual=false;
+const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}};
+const saveCfg=()=>{try{fs.writeFileSync(SETF(),JSON.stringify(cfg,null,1))}catch{}};
+const applyTheme=()=>{nativeTheme.themeSource=['light','dark'].includes(cfg.theme)?cfg.theme:'system'};
+const homeUrl=()=>cfg.home==='blank'?'about:blank':(cfg.home==='custom'&&/^https?:\/\//i.test(cfg.customHome)?cfg.customHome:'https://www.google.com/');
+const searchUrl=()=>ENG[cfg.search]||ENG.google;
+const PAGES={manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map(),tabs=[];
 let win,active=null,mode='top',nextId=1,restoring=true,quitting=false,saveT=null,started=false;
 const load=()=>{try{return JSON.parse(fs.readFileSync(FILE(),'utf8'))}catch{return[]}};
@@ -50,13 +59,13 @@ function layout(){
 }
 function pushTabs(){
  if(!win||win.isDestroyed()||win.webContents.isDestroyed())return;
- const t=tabs.find(x=>x.id===active),pg=t&&t.kind!=='manager',nh=pg?t.view.webContents.navigationHistory:null,all=load();
- const nm=id=>id==='_mgr'?'Профили':(all.find(p=>p.id===id)||{name:'?'}).name;
- const col=id=>id==='_mgr'?'#8b93a5':colorOf(id);
  saveSoon();
+ const t=tabs.find(x=>x.id===active),pg=t&&!t.kind,nh=pg?t.view.webContents.navigationHistory:null,all=load();
+ const nm=id=>id==='_mgr'?PAGES.manager.title:id==='_set'?PAGES.settings.title:(all.find(p=>p.id===id)||{name:'?'}).name;
+ const col=id=>id[0]==='_'?'#8b93a5':colorOf(id);
  win.webContents.send('tabs',{mode,active,url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
   profiles:[...new Set(tabs.map(x=>x.pid))].map(id=>({id,name:nm(id),color:col(id)})),
-  tabs:tabs.map(x=>({id:x.id,pid:x.pid,title:x.kind==='manager'?'Профили':(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind==='manager'?'☰':nm(x.pid)[0].toUpperCase()}))});
+  tabs:tabs.map(x=>({id:x.id,pid:x.pid,title:x.kind?PAGES[x.kind].title:(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind?PAGES[x.kind].icon:nm(x.pid)[0].toUpperCase()}))});
 }
 async function newTab(pid,url,bg){
  const p=prof(pid);if(!p)return null;
@@ -68,7 +77,7 @@ async function newTab(pid,url,bg){
   else await ses.setProxy({mode:'direct'});
  }catch(e){dialog.showErrorBox('MultiBrowser',e.message);return null}
  const v=new WebContentsView({webPreferences:{session:ses,contextIsolation:true,sandbox:true}});
- const t={id:nextId++,pid,view:v,title:'',url:url||START,vpn};tabs.push(t);
+ const t={id:nextId++,pid,view:v,title:'',url:url||homeUrl(),vpn};tabs.push(t);
  const wc=v.webContents;
  wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
  wc.setWindowOpenHandler(({url:u})=>{newTab(pid,u);return{action:'deny'}});
@@ -85,7 +94,7 @@ function closeTab(id){
  win.contentView.removeChildView(t.view);t.view.webContents.close();if(t.vpn)dropTunnel(t.pid);
  if(active===id)active=tabs.length?tabs[Math.max(0,i-1)].id:null;layout();pushTabs();
 }
-const norm=s=>{s=s.trim();if(!s)return START;if(/^[a-z]+:\/\//i.test(s))return s;return /^[^\s]+\.[^\s]{2,}$/.test(s)||/^localhost(:\d+)?/.test(s)?'https://'+s:SEARCH+encodeURIComponent(s)};
+const norm=s=>{s=s.trim();if(!s)return homeUrl();if(/^[a-z]+:\/\//i.test(s))return s;return /^[^\s]+\.[^\s]{2,}$/.test(s)||/^localhost(:\d+)?/.test(s)?'https://'+s:searchUrl()+encodeURIComponent(s)};
 
 // ---------- усиленный режим: движок fingerprint-chromium отдельным окном ----------
 async function launch(id){
@@ -106,16 +115,17 @@ const SESS=()=>path.join(DATA(),'session.json');
 function saveSession(){
  if(restoring||quitting)return;
  const data={mode,active:tabs.findIndex(t=>t.id===active),enhanced:[...running.keys()],
-  tabs:tabs.map(t=>({pid:t.pid,kind:t.kind||'page',url:t.kind==='manager'?'':(t.view.webContents.getURL()||t.url)}))};
+  tabs:tabs.map(t=>({pid:t.pid,kind:t.kind||'',url:t.kind?'':(t.view.webContents.getURL()||t.url)}))};
  try{fs.writeFileSync(SESS(),JSON.stringify(data))}catch{}
 }
 function saveSoon(){clearTimeout(saveT);saveT=setTimeout(saveSession,500)}
 async function restoreSession(){
  let s=null;try{s=JSON.parse(fs.readFileSync(SESS(),'utf8'))}catch{}
+ if(!cfg.restore)s=null;
  if(s&&s.mode==='side')mode='side';
  const ids=new Set(load().map(p=>p.id));let target=null;
  for(let i=0;s&&Array.isArray(s.tabs)&&i<s.tabs.length;i++){const x=s.tabs[i];let t=null;
-  if(x.kind==='manager')t=openManager(true);else if(ids.has(x.pid))t=await newTab(x.pid,x.url,true);
+  if(x.kind&&PAGES[x.kind])t=openPage(x.kind,true);else if(!x.kind&&ids.has(x.pid))t=await newTab(x.pid,x.url,true);
   if(t&&i===s.active)target=t}
  const pick=target||tabs[0];if(pick)active=pick.id;
  if(!tabs.length&&!ids.size)openManager();
@@ -124,10 +134,16 @@ async function restoreSession(){
 }
 
 // ---------- обновления программы (с подтверждением) ----------
+function manualCheck(){
+ if(!app.isPackaged)return dialog.showMessageBox(win,{message:'Проверка обновлений работает только в установленной версии.'});
+ manual=true;
+ return autoUpdater.checkForUpdates().catch(()=>{manual=false;dialog.showMessageBox(win,{type:'warning',message:'Не удалось проверить обновления',detail:'Проверь интернет. Репозиторий с релизами должен быть публичным.'})});
+}
 function setupUpdater(){
  if(!app.isPackaged)return;
  autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
  autoUpdater.on('update-available',async i=>{
+  manual=false;
   const r=await dialog.showMessageBox(win,{type:'question',buttons:['Скачать','Позже'],defaultId:0,cancelId:1,title:'Обновление',
    message:'Доступна новая версия '+i.version,detail:'Скачать сейчас? Установка произойдёт после перезапуска, вкладки восстановятся.'});
   if(r.response===0)autoUpdater.downloadUpdate().catch(()=>{});
@@ -136,8 +152,9 @@ function setupUpdater(){
   const r=await dialog.showMessageBox(win,{type:'question',buttons:['Перезапустить и установить','Позже'],defaultId:0,cancelId:1,title:'Обновление',message:'Обновление скачано'});
   if(r.response===0){saveSession();quitting=true;autoUpdater.quitAndInstall(true,true)}
  });
+ autoUpdater.on('update-not-available',()=>{if(manual){manual=false;dialog.showMessageBox(win,{message:'Установлена последняя версия'})}});
  autoUpdater.on('error',()=>{});
- const check=()=>autoUpdater.checkForUpdates().catch(()=>{});
+ const check=()=>{if(cfg.autoUpdate)autoUpdater.checkForUpdates().catch(()=>{})};
  setTimeout(check,8000);setInterval(check,6*3600*1000);
 }
 
@@ -160,19 +177,25 @@ ipcMain.handle('newTabMenu',()=>{const l=load();
  Menu.buildFromTemplate(items).popup()});
 ipcMain.handle('activate',(e,id)=>{active=id;layout();pushTabs()});
 ipcMain.handle('closeTab',(e,id)=>closeTab(id));
-ipcMain.handle('navigate',(e,s)=>{const t=tabs.find(x=>x.id===active);if(t&&t.kind!=='manager')t.view.webContents.loadURL(norm(s))});
-ipcMain.handle('nav',(e,a)=>{const t=tabs.find(x=>x.id===active);if(!t||t.kind==='manager')return;const h=t.view.webContents.navigationHistory;
+ipcMain.handle('navigate',(e,s)=>{const t=tabs.find(x=>x.id===active);if(t&&!t.kind)t.view.webContents.loadURL(norm(s))});
+ipcMain.handle('nav',(e,a)=>{const t=tabs.find(x=>x.id===active);if(!t||t.kind)return;const h=t.view.webContents.navigationHistory;
  if(a==='back')h.goBack();else if(a==='forward')h.goForward();else t.view.webContents.reload()});
 ipcMain.handle('setMode',(e,m)=>{mode=m==='side'?'side':'top';layout();pushTabs()});
-function openManager(bg){   // страница «Профили» открывается как вкладка внутри оболочки
- const ex=tabs.find(x=>x.kind==='manager');if(ex){if(!bg){active=ex.id;layout();pushTabs()}return ex}
+function openPage(kind,bg){   // внутренние страницы («Профили», «Настройки») открываются как вкладки
+ const def=PAGES[kind],ex=tabs.find(x=>x.kind===kind);if(ex){if(!bg){active=ex.id;layout();pushTabs()}return ex}
  const v=new WebContentsView({webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
- const t={id:nextId++,pid:'_mgr',kind:'manager',view:v,title:'Профили',url:''};tabs.push(t);
- win.contentView.addChildView(v);if(!bg||active===null)active=t.id;v.webContents.loadFile('ui/index.html');layout();pushTabs();return t;
+ const t={id:nextId++,pid:def.pid,kind,view:v,title:def.title,url:''};tabs.push(t);
+ win.contentView.addChildView(v);if(!bg||active===null)active=t.id;v.webContents.loadFile(def.file);layout();pushTabs();return t;
 }
+const openManager=bg=>openPage('manager',bg);
 ipcMain.handle('openManager',()=>{openManager()});
+ipcMain.handle('openSettings',()=>{openPage('settings')});
+ipcMain.handle('getSettings',()=>({...cfg,version:app.getVersion()}));
+ipcMain.handle('setSettings',(e,p)=>{for(const k of Object.keys(DEF))if(k in p)cfg[k]=p[k];saveCfg();applyTheme();return true});
+ipcMain.handle('checkUpdates',()=>manualCheck());
 const ovl=()=>{const d=nativeTheme.shouldUseDarkColors;return{color:d?'#181c25':'#f3f4f7',symbolColor:d?'#e6e9f0':'#1b1f2a',height:40}};
 app.whenReady().then(()=>{
+ loadCfg();applyTheme();
  Menu.setApplicationMenu(null);
  win=new BrowserWindow({width:1280,height:800,title:'MultiBrowser',backgroundColor:'#12151c',titleBarStyle:'hidden',titleBarOverlay:ovl(),
   webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
