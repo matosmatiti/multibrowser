@@ -16,4 +16,8 @@ $('plus').onclick=()=>api.newTabMenu();
 $('back').onclick=()=>api.nav('back');$('fwd').onclick=()=>api.nav('forward');$('rl').onclick=()=>api.nav('reload');
 $('mgr').onclick=()=>api.openManager();$('set').onclick=()=>api.openSettings();$('mode').onclick=()=>api.setMode(S.mode==='top'?'side':'top');
 $('addr').onkeydown=e=>{if(e.key==='Enter'){api.navigate($('addr').value);$('addr').blur()}};
+api.onUpdate(u=>{const T=$('updt'),B=$('updbar'),F=B.firstElementChild;
+ if(u.state==='downloading'){T.hidden=B.hidden=false;T.textContent='Загрузка обновления '+u.percent+'%';F.style.width=u.percent+'%'}
+ else if(u.state==='installing'){T.hidden=B.hidden=false;T.textContent='Устанавливаю обновление…';F.style.width='100%'}
+ else T.hidden=B.hidden=true});
 render();

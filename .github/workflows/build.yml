@@ -13,17 +13,15 @@ jobs:
       - run: mkdir -p logs resources
       - uses: actions/setup-node@v4
         with: {node-version: 20}
-      - uses: actions/setup-go@v5
-        with: {go-version: '1.24'}
-      - name: VPN-туннель (awg-wireproxy)
+      - name: Ядро подключений (sing-box)
         id: vpn
-        env: {WIREPROXY_COMMIT: 4d15c1fe429af1214b9f4a38f7ef49ae966c5b8a}
+        env: {SINGBOX_VERSION: 1.13.12}
         run: |
           {
-            git clone --no-checkout https://github.com/bropines/awg-wireproxy.git wp
-            cd wp
-            git checkout "$WIREPROXY_COMMIT"
-            GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -trimpath -o ../resources/wireproxy.exe ./cmd/wireproxy
+            curl -fsSL -o sb.zip "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-windows-amd64.zip"
+            7z x sb.zip -osb -y
+            cp sb/sing-box-${SINGBOX_VERSION}-windows-amd64/* resources/
+            sha256sum sb.zip resources/sing-box.exe
           } 2>&1 | tee logs/1-vpn-tunnel.log
       - name: Движок
         id: engine
@@ -44,7 +42,7 @@ jobs:
         run: |
           {
             echo "## Сборка успешна. Установщик лежит в разделе Releases справа на главной странице репозитория (и внизу этой страницы в Artifacts)."
-            echo "SHA256 wireproxy.exe (для проверки на VirusTotal): $(sha256sum resources/wireproxy.exe | cut -d' ' -f1)"
+            echo "SHA256 sing-box.exe (для проверки на VirusTotal): $(sha256sum resources/sing-box.exe | cut -d' ' -f1)"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Отчёт об ошибке
         if: failure()
@@ -57,7 +55,7 @@ jobs:
           show() { if [ "$1" = failure ]; then echo "### $2"; echo '```'; tail -n 25 "$3"; echo '```'; fi; }
           {
             echo "## Сборка упала"
-            show "$O1" "VPN-туннель" logs/1-vpn-tunnel.log
+            show "$O1" "Ядро подключений" logs/1-vpn-tunnel.log
             show "$O2" "Движок" logs/2-engine.log
             show "$O3" "Зависимости" logs/3-npm.log
             show "$O4" "Установщик" logs/4-installer.log

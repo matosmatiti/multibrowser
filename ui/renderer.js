@@ -14,6 +14,6 @@ async function draw(){const d=await api.list();all=d.profiles;run=d.running;if(!
 $('q').oninput=show;$('new').onclick=()=>{$('form').hidden=!$('form').hidden};$('cancel').onclick=()=>{$('form').hidden=true};
 $('mode').onchange=()=>{const m=$('mode').value;$('px').hidden=m!=='proxy';$('pick').hidden=m!=='vpn'};
 $('pick').onclick=async()=>{const r=await api.pickConf();if(r){conf=r.text;$('cf').textContent=r.name}};
-$('add').onclick=async()=>{await api.add({name:$('n').value,mode:$('mode').value,type:$('ty').value,host:$('h').value,port:$('po').value,confText:conf});
- $('n').value='';conf=null;$('cf').textContent='';$('form').hidden=true;draw()};
+$('add').onclick=async()=>{await api.add({name:$('n').value,mode:$('mode').value,type:$('ty').value,host:$('h').value,port:$('po').value,user:$('us').value,pass:$('pw').value,confText:conf});
+ $('n').value='';$('us').value='';$('pw').value='';conf=null;$('cf').textContent='';$('form').hidden=true;draw()};
 api.onState(draw);draw();

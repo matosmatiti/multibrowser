@@ -9,5 +9,5 @@ async function init(){const c=await api.getSettings();
  $('home').onchange=()=>{$('cr').hidden=$('home').value!=='custom';save({home:$('home').value})};
  $('custom').onchange=()=>save({customHome:$('custom').value.trim()});
  for(const k of ['restore','autoUpdate'])$(k).onchange=()=>save({[k]:$(k).checked});
- $('chk').onclick=()=>api.checkUpdates()}
+ $('chk').onclick=()=>api.checkUpdates();$('log').onclick=()=>api.showLog()}
 init();

@@ -1,13 +1,13 @@
 // MultiBrowser: своя оболочка (вкладки разных аккаунтов в одном окне) + усиленный режим (движок fingerprint-chromium отдельным окном)
-const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme}=require('electron');
+const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell}=require('electron');
 const path=require('path'),fs=require('fs'),net=require('net'),crypto=require('crypto');
-const {spawn}=require('child_process');
+const {spawn,spawnSync}=require('child_process');
 const {autoUpdater}=require('electron-updater');
 const RES=app.isPackaged?process.resourcesPath:path.join(__dirname,'resources');
 const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json');
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
 const DEF={search:'google',home:'google',customHome:'',theme:'system',restore:true,autoUpdate:true};
-const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q=',yandex:'https://yandex.ru/search/?text='};
+const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q='};
 let cfg={...DEF},manual=false;
 const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}};
 const saveCfg=()=>{try{fs.writeFileSync(SETF(),JSON.stringify(cfg,null,1))}catch{}};
@@ -16,6 +16,8 @@ const homeUrl=()=>cfg.home==='blank'?'about:blank':(cfg.home==='custom'&&/^https
 const searchUrl=()=>ENG[cfg.search]||ENG.google;
 const PAGES={manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map(),tabs=[];
+const LOG=()=>path.join(app.getPath('userData'),'log.txt');
+const log=m=>{try{fs.appendFileSync(LOG(),new Date().toISOString()+' '+m+'\n')}catch{}};
 let win,active=null,mode='top',nextId=1,restoring=true,quitting=false,saveT=null,started=false;
 const load=()=>{try{return JSON.parse(fs.readFileSync(FILE(),'utf8'))}catch{return[]}};
 const save=l=>fs.writeFileSync(FILE(),JSON.stringify(l,null,1));
@@ -35,19 +37,52 @@ const colorOf=id=>PAL[parseInt(id.replace(/-/g,'').slice(0,6),16)%PAL.length];
 const pushMgr=()=>{saveSoon();const t=tabs.find(x=>x.kind==='manager');if(t&&!t.view.webContents.isDestroyed())t.view.webContents.send('state',[...running.keys()])};
 const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),kind:p.vpn?'VPN-конфиг':p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси'}));
 
-// ---------- туннель VPN-конфига (общий для всех вкладок одного профиля) ----------
+// ---------- подключения: прокси с логином и VPN-конфиги (WireGuard) через sing-box ----------
+const needsTunnel=p=>!!(p.vpn||(p.proxy&&p.proxy.user));
+function parseWg(text){
+ const I={},P={};let cur=null,peers=0;
+ for(let line of text.split(/\r?\n/)){line=line.trim();if(!line||line[0]==='#'||line[0]===';')continue;
+  const m=line.match(/^\[(\w+)\]$/);if(m){cur=m[1]==='Interface'?I:(m[1]==='Peer'&&!peers++?P:null);continue}
+  const i=line.indexOf('=');if(i<0||!cur)continue;cur[line.slice(0,i).trim().toLowerCase()]=line.slice(i+1).trim()}
+ if(['jc','jmin','jmax','s1','s2','s3','s4','h1','h2','h3','h4','i1','i2','i3','i4','i5'].some(k=>k in I))
+  throw new Error('Это конфиг AmneziaWG (с параметрами Jc, S1, H1…). Нужен обычный WireGuard-конфиг.');
+ const e=(P.endpoint||'').match(/^\[?([^\]]+?)\]?:(\d+)$/);
+ if(!I.privatekey||!I.address||!P.publickey||!e)throw new Error('В конфиге не хватает данных (PrivateKey, Address, PublicKey или Endpoint).');
+ const dns=(I.dns||'').split(',').map(x=>x.trim()).filter(Boolean);
+ return {address:I.address.split(',').map(x=>x.trim()),privateKey:I.privatekey,mtu:+I.mtu||1280,dns:dns.find(x=>/^\d+\.\d+\.\d+\.\d+$/.test(x))||dns[0]||'1.1.1.1',
+  host:e[1],port:+e[2],pub:P.publickey,psk:P.presharedkey,keepalive:+P.persistentkeepalive||25};
+}
+function singConfig(p,port){
+ const c={log:{level:'error'},inbounds:[{type:'mixed',tag:'in',listen:'127.0.0.1',listen_port:port}]};
+ const boot={type:'udp',tag:'boot',server:'1.1.1.1'};
+ if(p.vpn){
+  const w=parseWg(dec(p.vpn));
+  c.endpoints=[{type:'wireguard',tag:'proxy',address:w.address,private_key:w.privateKey,mtu:w.mtu,
+   peers:[{address:w.host,port:w.port,public_key:w.pub,...(w.psk?{pre_shared_key:w.psk}:{}),allowed_ips:['0.0.0.0/0','::/0'],persistent_keepalive_interval:w.keepalive}]}];
+  c.dns={servers:[boot,{type:'udp',tag:'tun',server:w.dns,detour:'proxy'}],final:'tun'};
+ }else{
+  const x=p.proxy,o={type:x.type==='http'?'http':'socks',tag:'proxy',server:x.host,server_port:+x.port,username:x.user,password:dec(x.pass||'')};
+  if(o.type==='socks')o.version='5';
+  c.outbounds=[o];c.dns={servers:[boot]};
+ }
+ c.route={final:'proxy',default_domain_resolver:'boot'};
+ return c;
+}
 async function makeTunnel(p,tag){
  const port=await freePort(),dir=path.join(DATA(),'run');fs.mkdirSync(dir,{recursive:true});
- const conf=path.join(dir,tag+p.id+'.conf');
- fs.writeFileSync(conf,dec(p.vpn)+`\n\n[Socks5]\nBindAddress = 127.0.0.1:${port}\n`);
- const wp=spawn(path.join(RES,'wireproxy.exe'),['-s','-c',conf],{windowsHide:true});
- return {wp,conf,port,n:1,ready:waitPort(port)};
+ const conf=path.join(dir,tag+p.id+'.json'),exe=path.join(RES,'sing-box.exe');
+ fs.writeFileSync(conf,JSON.stringify(singConfig(p,port)));   // сам конфиг лежит на диске только пока профиль открыт
+ const chk=spawnSync(exe,['check','-c',conf],{windowsHide:true,encoding:'utf8'});
+ if(chk.status!==0){try{fs.rmSync(conf,{force:true})}catch{}const m=((chk.stderr||chk.stdout||chk.error&&chk.error.message||'')+'').trim().split('\n').pop();log('sing-box check: '+m);throw new Error('Не удалось применить настройки подключения: '+m)}
+ const wp=spawn(exe,['run','-c',conf],{windowsHide:true});let out='';
+ const add=d=>{out=(out+d).slice(-800)};wp.stdout.on('data',add);wp.stderr.on('data',add);
+ return {wp,conf,port,n:1,err:()=>out.trim().split('\n').pop()||'туннель не отвечает',ready:waitPort(port)};
 }
 async function tunnelFor(p){
  let t=tunnels.get(p.id);
  if(t)t.n++;else{t=await makeTunnel(p,'s-');tunnels.set(p.id,t)}
- if(!await t.ready){dropTunnel(p.id,true);throw new Error('VPN-туннель не поднялся: проверь конфиг')}
- return t.port;
+ if(!await t.ready){const e=t.err();log('tunnel failed: '+e);dropTunnel(p.id,true);throw new Error('Не удалось подключиться: '+e)}
+ return `socks5://127.0.0.1:${t.port}`;
 }
 function dropTunnel(id,force){const t=tunnels.get(id);if(!t)return;if(!force&&--t.n>0)return;cleanup(t);tunnels.delete(id)}
 
@@ -72,7 +107,7 @@ async function newTab(pid,url,bg){
  const ses=session.fromPartition('persist:p-'+pid);   // у каждого профиля свои куки, кэш и хранилище
  let vpn=false;
  try{
-  if(p.vpn){const port=await tunnelFor(p);vpn=true;await ses.setProxy({proxyRules:`socks5://127.0.0.1:${port}`})}
+  if(needsTunnel(p)){const u=await tunnelFor(p);vpn=true;await ses.setProxy({proxyRules:u})}
   else if(p.proxy)await ses.setProxy({proxyRules:`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`});
   else await ses.setProxy({mode:'direct'});
  }catch(e){dialog.showErrorBox('MultiBrowser',e.message);return null}
@@ -101,8 +136,8 @@ async function launch(id){
  const p=prof(id);if(!p||running.has(id))return;
  const chrome=findFile(path.join(RES,'engine'),'chrome.exe');if(!chrome)throw new Error('Движок не найден (resources/engine)');
  const job={};let proxy=null;
- if(p.vpn){const t=await makeTunnel(p,'e-');job.wp=t.wp;job.conf=t.conf;
-  if(!await t.ready){cleanup(job);throw new Error('VPN-туннель не поднялся: проверь конфиг')}proxy=`socks5://127.0.0.1:${t.port}`}
+ if(needsTunnel(p)){const t=await makeTunnel(p,'e-');job.wp=t.wp;job.conf=t.conf;
+  if(!await t.ready){const e=t.err();cleanup(job);throw new Error('Не удалось подключиться: '+e)}proxy=`socks5://127.0.0.1:${t.port}`}
  else if(p.proxy)proxy=`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`;
  const args=[`--user-data-dir=${path.join(DATA(),'profiles',id)}`,`--fingerprint=${p.seed}`,'--no-first-run','--no-default-browser-check','--restore-last-session'];
  if(proxy)args.push(`--proxy-server=${proxy}`,'--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
@@ -120,20 +155,26 @@ function saveSession(){
 }
 function saveSoon(){clearTimeout(saveT);saveT=setTimeout(saveSession,500)}
 async function restoreSession(){
- let s=null;try{s=JSON.parse(fs.readFileSync(SESS(),'utf8'))}catch{}
- if(!cfg.restore)s=null;
- if(s&&s.mode==='side')mode='side';
- const ids=new Set(load().map(p=>p.id));let target=null;
- for(let i=0;s&&Array.isArray(s.tabs)&&i<s.tabs.length;i++){const x=s.tabs[i];let t=null;
-  if(x.kind&&PAGES[x.kind])t=openPage(x.kind,true);else if(!x.kind&&ids.has(x.pid))t=await newTab(x.pid,x.url,true);
-  if(t&&i===s.active)target=t}
- const pick=target||tabs[0];if(pick)active=pick.id;
- if(!tabs.length&&!ids.size)openManager();
- layout();pushTabs();restoring=false;saveSoon();
- for(const id of (s&&s.enhanced)||[]){if(ids.has(id)){launch(id).catch(()=>{});await new Promise(r=>setTimeout(r,800))}}
+ let s=null;
+ try{
+  try{s=JSON.parse(fs.readFileSync(SESS(),'utf8'))}catch(e){log('session read: '+e.message)}
+  log('restore: '+(s&&s.tabs?s.tabs.length+' tabs, '+(s.enhanced||[]).length+' enhanced':'no session')+(cfg.restore?'':' (disabled)'));
+  if(!cfg.restore)s=null;
+  if(s&&s.mode==='side')mode='side';
+  const ids=new Set(load().map(p=>p.id));let target=null;
+  for(let i=0;s&&Array.isArray(s.tabs)&&i<s.tabs.length;i++){const x=s.tabs[i];let t=null;
+   try{if(x.kind&&PAGES[x.kind])t=openPage(x.kind,true);else if(!x.kind&&ids.has(x.pid))t=await newTab(x.pid,x.url,true)}catch(e){log('restore tab: '+e.message)}
+   if(t&&i===s.active)target=t}
+  const pick=target||tabs[0];if(pick)active=pick.id;
+  if(!tabs.length&&!ids.size)openPage('manager');
+  layout();pushTabs();
+ }catch(e){log('restore error: '+(e&&e.stack||e))}
+ finally{restoring=false;saveSoon()}
+ for(const id of (s&&s.enhanced)||[]){if(load().some(p=>p.id===id)){launch(id).catch(e=>log('restore enhanced: '+e.message));await new Promise(r=>setTimeout(r,800))}}
 }
 
-// ---------- обновления программы (с подтверждением) ----------
+// ---------- обновления программы (с подтверждением и индикатором) ----------
+const sendUpd=u=>{if(win&&!win.isDestroyed()&&!win.webContents.isDestroyed())win.webContents.send('update',u)};
 function manualCheck(){
  if(!app.isPackaged)return dialog.showMessageBox(win,{message:'Проверка обновлений работает только в установленной версии.'});
  manual=true;
@@ -143,17 +184,20 @@ function setupUpdater(){
  if(!app.isPackaged)return;
  autoUpdater.autoDownload=false;autoUpdater.autoInstallOnAppQuit=false;
  autoUpdater.on('update-available',async i=>{
-  manual=false;
+  manual=false;log('update available '+i.version);
   const r=await dialog.showMessageBox(win,{type:'question',buttons:['Скачать','Позже'],defaultId:0,cancelId:1,title:'Обновление',
-   message:'Доступна новая версия '+i.version,detail:'Скачать сейчас? Установка произойдёт после перезапуска, вкладки восстановятся.'});
-  if(r.response===0)autoUpdater.downloadUpdate().catch(()=>{});
+   message:'Доступна новая версия '+i.version,detail:'Скачать сейчас? Установка начнётся после перезапуска, вкладки восстановятся.'});
+  if(r.response===0){sendUpd({state:'downloading',percent:0});autoUpdater.downloadUpdate().catch(e=>{log('download error '+e);win.setProgressBar(-1);sendUpd({state:'idle'})})}
  });
+ autoUpdater.on('download-progress',p=>{const pc=Math.round(p.percent||0);win.setProgressBar(pc/100);sendUpd({state:'downloading',percent:pc})});
  autoUpdater.on('update-downloaded',async()=>{
+  win.setProgressBar(-1);sendUpd({state:'idle'});
   const r=await dialog.showMessageBox(win,{type:'question',buttons:['Перезапустить и установить','Позже'],defaultId:0,cancelId:1,title:'Обновление',message:'Обновление скачано'});
-  if(r.response===0){saveSession();quitting=true;autoUpdater.quitAndInstall(true,true)}
+  if(r.response===0){sendUpd({state:'installing'});win.setProgressBar(2);saveSession();quitting=true;log('quitAndInstall');
+   setTimeout(()=>autoUpdater.quitAndInstall(false,true),1200)}
  });
  autoUpdater.on('update-not-available',()=>{if(manual){manual=false;dialog.showMessageBox(win,{message:'Установлена последняя версия'})}});
- autoUpdater.on('error',()=>{});
+ autoUpdater.on('error',e=>log('updater error: '+(e&&e.message)));
  const check=()=>{if(cfg.autoUpdate)autoUpdater.checkForUpdates().catch(()=>{})};
  setTimeout(check,8000);setInterval(check,6*3600*1000);
 }
@@ -163,7 +207,7 @@ ipcMain.handle('list',()=>({profiles:view(),running:[...running.keys()]}));
 ipcMain.handle('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
  return r.canceled?null:{name:path.basename(r.filePaths[0]),text:fs.readFileSync(r.filePaths[0],'utf8')}});
 ipcMain.handle('add',(e,d)=>{const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};
- if(d.mode==='vpn'&&d.confText)p.vpn=enc(d.confText);else if(d.mode==='proxy'&&d.host)p.proxy={type:d.type,host:d.host,port:d.port};
+ if(d.mode==='vpn'&&d.confText)p.vpn=enc(d.confText);else if(d.mode==='proxy'&&d.host){p.proxy={type:d.type,host:d.host,port:d.port};if(d.user){p.proxy.user=d.user;p.proxy.pass=enc(d.pass||'')}}
  l.push(p);save(l);pushTabs()});
 ipcMain.handle('launch',async(e,id)=>{try{await launch(id);return null}catch(x){return x.message}});
 ipcMain.handle('stop',(e,id)=>{const j=running.get(id);if(j)kill(j.chrome)});
@@ -193,9 +237,12 @@ ipcMain.handle('openSettings',()=>{openPage('settings')});
 ipcMain.handle('getSettings',()=>({...cfg,version:app.getVersion()}));
 ipcMain.handle('setSettings',(e,p)=>{for(const k of Object.keys(DEF))if(k in p)cfg[k]=p[k];saveCfg();applyTheme();return true});
 ipcMain.handle('checkUpdates',()=>manualCheck());
+ipcMain.handle('showLog',()=>{shell.showItemInFolder(LOG())});
 const ovl=()=>{const d=nativeTheme.shouldUseDarkColors;return{color:d?'#181c25':'#f3f4f7',symbolColor:d?'#e6e9f0':'#1b1f2a',height:40}};
 app.whenReady().then(()=>{
  loadCfg();applyTheme();
+ try{if(fs.statSync(LOG()).size>200000)fs.rmSync(LOG())}catch{}
+ log('start v'+app.getVersion());
  Menu.setApplicationMenu(null);
  win=new BrowserWindow({width:1280,height:800,title:'MultiBrowser',backgroundColor:'#12151c',titleBarStyle:'hidden',titleBarOverlay:ovl(),
   webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});

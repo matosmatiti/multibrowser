@@ -22,11 +22,18 @@ body.side #top{display:none}body.side #side{display:block}body.side #bar{left:24
 body.side .tab{border-top:0;border-left:3px solid var(--c);border-radius:6px;max-width:none;margin:1px 0}
 #empty{position:absolute;left:0;right:0;top:82px;bottom:0;display:flex;align-items:center;justify-content:center;color:var(--m);text-align:center;padding:20px}
 body.side #empty{left:240px;top:42px}
+button{transition:background .12s,transform .06s,filter .12s;cursor:pointer}
+button:hover:not(:disabled){background:var(--h)}
+button.p:hover:not(:disabled){background:var(--a);filter:brightness(1.12)}
+button:active:not(:disabled){transform:scale(.95);filter:brightness(.9)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a);outline-offset:1px}
+#updt{color:var(--a);font-size:12px;white-space:nowrap}#updbar{position:absolute;left:0;right:0;top:79px;height:3px;background:var(--b)}#updbar[hidden]{display:none}#updbar div{height:100%;width:0;background:var(--a);transition:width .2s}body.side #updbar{left:240px;top:39px}
 </style></head><body>
 <div id="top"><div id="tabs"></div><button id="plus" title="Новая вкладка">+</button><div id="grab"></div></div>
 <div id="side"><div id="brand">MultiBrowser</div><div id="groups"></div></div>
 <div id="bar"><button id="back" title="Назад">◀</button><button id="fwd" title="Вперёд">▶</button><button id="rl" title="Обновить">⟳</button>
 <input id="addr" aria-label="Адресная строка" placeholder="Введи адрес или поисковый запрос">
-<button id="mode" title="Переключить вид: вкладки сверху / боковая панель">▤ Вид</button><button id="mgr">Профили</button><button id="set" title="Настройки" aria-label="Настройки">⚙</button></div>
+<span id="updt" hidden></span><button id="mode" title="Переключить вид: вкладки сверху / боковая панель">▤ Вид</button><button id="mgr">Профили</button><button id="set" title="Настройки" aria-label="Настройки">⚙</button></div>
+<div id="updbar" hidden><div></div></div>
 <div id="empty">Нет открытых вкладок.<br>Нажми «+» и выбери профиль, либо открой «Профили».</div>
 <script src="shell.js"></script></body></html>
