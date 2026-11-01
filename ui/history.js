@@ -9,5 +9,5 @@ async function load(){const list=await api.histList({q:$('q').value.trim()}),L=$
   const a=el('div',null,'act'),o=el('button','Открыть','p'),x=el('button','✕');x.title='Удалить из истории';
   o.onclick=()=>api.openUrl({url:h.url,pid:h.pid});x.onclick=async()=>{await api.histRemove(h.id);load()};
   a.append(o,x);r.append(m,a);L.append(r)}}
-$('q').oninput=load;$('rf').onclick=load;$('clr').onclick=async()=>{if(confirm('Удалить всю историю?')){await api.histClear();load()}};
+$('q').oninput=load;$('rf').onclick=load;$('clr').onclick=async()=>{if(await api.confirm('Удалить всю историю?')){await api.histClear();load()}};
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});load();

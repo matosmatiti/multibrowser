@@ -1,7 +1,7 @@
 {
  "name": "multibrowser",
  "version": "0.1.0",
- "description": "MultiBrowser",
+ "description": "MultiBrowser: браузер с несколькими аккаунтами",
  "main": "main.js",
  "scripts": {
   "start": "electron .",
@@ -26,11 +26,20 @@
    }
   ],
   "win": {
-   "target": "nsis"
+   "target": "nsis",
+   "icon": "build/icon.ico"
   },
   "nsis": {
    "oneClick": true,
-   "perMachine": false
+   "perMachine": false,
+   "installerIcon": "build/icon.ico",
+   "uninstallerIcon": "build/icon.ico",
+   "installerHeaderIcon": "build/icon.ico",
+   "shortcutName": "MultiBrowser",
+   "createDesktopShortcut": true,
+   "createStartMenuShortcut": true,
+   "runAfterFinish": true,
+   "language": "1049"
   },
   "publish": {
    "provider": "github",

@@ -11,7 +11,7 @@ $('new').onclick=()=>open({id:null,name:'',match:['*'],runAt:'dom-ready',code:''
 $('save').onclick=async()=>{if(!$('name').value.trim()){$('msg').textContent='Укажи название';return}
  const id=await api.scSave({id:cur&&cur.id,name:$('name').value,match:$('match').value,runAt:$('runAt').value,code:$('code').value});
  await load();cur=all.find(s=>s.id===id)||cur;draw();$('msg').textContent='Сохранено'};
-$('del').onclick=async()=>{if(cur&&cur.id&&confirm('Удалить скрипт «'+cur.name+'»?')){await api.scDelete(cur.id);cur=null;$('ed').hidden=true;$('hint').hidden=false;load()}};
+$('del').onclick=async()=>{if(cur&&cur.id&&await api.confirm('Удалить скрипт «'+cur.name+'»?')){await api.scDelete(cur.id);cur=null;$('ed').hidden=true;$('hint').hidden=false;load()}};
 $('ex').onchange=()=>{const k=$('ex').value;if(k){const c=$('code');c.value=(c.value?c.value+'\n\n':'')+EX[k];$('ex').value=''}};
 $('code').onkeydown=e=>{if(e.key==='Tab'){e.preventDefault();const c=e.target,s=c.selectionStart;c.value=c.value.slice(0,s)+'  '+c.value.slice(c.selectionEnd);c.selectionStart=c.selectionEnd=s+2}};
 load();

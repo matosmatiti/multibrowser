@@ -14,7 +14,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--a);outline-offs
 .ib:hover:not(:disabled){background:var(--h)}.ib:active:not(:disabled){transform:scale(.86)}.ib:disabled{opacity:.3;cursor:default}
 .ib.sm{width:26px;height:26px}.ib.sm svg{width:15px;height:15px}
 #top{position:absolute;left:0;right:0;top:0;height:40px;display:flex;align-items:flex-end;gap:2px;padding:0 150px 0 8px;background:var(--p);-webkit-app-region:drag}
-#tabs{display:flex;gap:3px;align-items:flex-end;min-width:0;flex:0 1 auto;overflow:hidden;height:100%;padding-top:6px}
+#tabs{display:flex;gap:3px;align-items:flex-end;min-width:0;flex:0 1 auto;overflow:hidden;height:100%;padding-top:6px;position:relative}
 #plus{margin-bottom:4px}#grab{flex:1;height:100%}
 #bar{position:absolute;left:0;right:0;top:40px;height:42px;display:flex;gap:4px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b)}
 #aw{flex:1;display:flex;align-items:center;height:32px;border:1px solid var(--b);border-radius:16px;background:var(--p);padding:0 3px 0 14px;transition:border-color .15s,box-shadow .15s;-webkit-app-region:no-drag}
@@ -25,7 +25,7 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--a);outline-offs
 #brand{height:40px;display:flex;align-items:center;font-weight:600;margin:0 -8px;padding:0 14px;-webkit-app-region:drag}
 body.side #top{display:none}body.side #side{display:block}
 body.side #bar{left:240px;top:0;padding-right:150px;-webkit-app-region:drag}
-.tab{display:flex;align-items:center;gap:7px;height:32px;min-width:44px;max-width:220px;flex:0 1 220px;padding:0 4px 0 9px;border-radius:9px 9px 0 0;color:var(--m);cursor:pointer;position:relative;transition:background .18s,color .18s;-webkit-app-region:no-drag}
+.tab{display:flex;align-items:center;gap:7px;height:32px;width:var(--tw,220px);flex:none;min-width:0;padding:0 4px 0 9px;border-radius:9px 9px 0 0;color:var(--m);cursor:pointer;position:relative;transition:background .18s,color .18s;-webkit-app-region:no-drag}
 .tab::after{content:"";position:absolute;left:9px;right:9px;top:0;height:2px;border-radius:0 0 2px 2px;background:var(--c);opacity:0;transition:opacity .18s}
 .tab:hover{background:var(--h)}.tab.act{background:var(--bg);color:var(--t)}.tab.act::after{opacity:1}
 .tab.new{animation:tin .22s ease-out}@keyframes tin{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
@@ -51,6 +51,10 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 #empty,#ph{position:absolute;left:var(--ox);right:0;top:var(--oy);bottom:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;text-align:center;color:var(--m);padding:20px;opacity:0;pointer-events:none;transition:opacity .3s}
 #empty.on,#ph.on{opacity:1}
 .sp{width:26px;height:26px;border:3px solid var(--b);border-top-color:var(--a);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+.tab.cmp:not(.act) .ttl,.tab.cmp:not(.act) .x{display:none}.tab.cmp:not(.act){justify-content:center;padding:0 6px}
+.tab.drag{z-index:5;opacity:.93;box-shadow:0 8px 20px rgba(0,0,0,.4);transition:none;cursor:grabbing;background:var(--bg);color:var(--t)}
+.ins{position:absolute;top:8px;bottom:2px;width:2px;border-radius:1px;background:var(--a);pointer-events:none}
+#shield.off svg{opacity:.4}#shc{position:absolute;right:0;bottom:1px;font-size:9px;font-style:normal;font-weight:700;background:var(--a);color:#0b1220;border-radius:6px;padding:0 3px;line-height:12px}#shc:empty{display:none}
 </style></head><body>
 <div id="top"><div id="tabs"></div><button id="plus" class="ib" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><div id="grab"></div></div>
 <div id="side"><div id="brand">MultiBrowser</div><div id="groups"></div></div>
@@ -62,6 +66,7 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 <span id="findbox" hidden><input id="fq" placeholder="Найти на странице" aria-label="Поиск на странице"><span id="fc"></span>
 <button id="fp" class="ib sm" title="Предыдущее"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button id="fn" class="ib sm" title="Следующее"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><button id="fx" class="ib sm" title="Закрыть"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></button></span>
 <span id="updt" hidden></span>
+<button id="shield" class="ib" title="Блокировка рекламы" aria-label="Блокировка рекламы"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/></svg><i id="shc"></i></button>
 <button id="dl" class="ib" title="Загрузки (Ctrl+J)" aria-label="Загрузки"><svg viewBox="0 0 24 24"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14"/></svg><i id="dlb"></i></button>
 <button id="mode" class="ib" title="Вид: вкладки сверху / боковая панель" aria-label="Вид"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
 <button id="mgr" class="ib" title="Профили" aria-label="Профили"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></button>

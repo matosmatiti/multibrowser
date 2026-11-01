@@ -1,5 +1,5 @@
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:">
 <title>Скрипты</title>
 <style>
 :root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--g:#1a8f5a;--h:#e4e7ef}
@@ -16,6 +16,9 @@ button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-vis
 .sc{text-align:left;width:100%;margin-bottom:4px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.sc.on{background:var(--h);border-color:var(--a)}
 .bar{display:flex;gap:8px;align-items:center;margin-top:12px;flex-wrap:wrap}#msg{color:var(--g)}.m{color:var(--m)}
 details{margin-top:18px;color:var(--m)}code{background:var(--p);padding:1px 5px;border-radius:4px}[hidden]{display:none!important}
+select{appearance:none;-webkit-appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b93a5' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer;transition:background-color .15s,border-color .15s,box-shadow .15s,transform .06s}
+select:hover{background-color:var(--h);border-color:var(--a)}select:focus{border-color:var(--a);box-shadow:0 0 0 3px color-mix(in srgb,var(--a) 22%,transparent)}select:active{transform:scale(.98)}
+input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover,input[type=search]:hover,input[type=password]:hover,textarea:hover{border-color:var(--a)}
 </style></head><body>
 <aside><h1>Скрипты</h1><button class="p" id="new">+ Новый скрипт</button><div id="list"></div>
 <div class="m">Включаются галочкой в «Профили → Настройки» у нужного профиля.</div></aside>
