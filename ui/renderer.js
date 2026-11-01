@@ -20,11 +20,19 @@ $('add').onclick=async()=>{await api.add({name:$('n').value,mode:$('mode').value
 api.onState(draw);draw();
 
 let eid=null;
-async function editProfile(id){const d=await api.getProfile(id);if(!d)return;eid=id;$('en').value=d.name;$('ed').value=d.downloadDir||'';$('ed').placeholder='По умолчанию: '+d.effective;$('edit').hidden=false;$('form').hidden=true}
+async function editProfile(id){const d=await api.getProfile(id);if(!d)return;eid=id;$('en').value=d.name;$('ed').value=d.downloadDir||'';$('ed').placeholder='По умолчанию: '+d.effective;
+ $('eac').checked=!!(d.autoclick&&d.autoclick.on);$('eacr').value=(d.autoclick&&d.autoclick.rules)||'';
+ const all=await api.scList(),L=$('esl');L.replaceChildren();if(!all.length)L.append(el('span','Своих скриптов пока нет.','m'));
+ for(const s of all){const lb=el('label'),cb=el('input');cb.type='checkbox';cb.value=s.id;cb.checked=(d.scripts||[]).includes(s.id);lb.append(cb,s.name);L.append(lb)}
+ $('edit').hidden=false;$('form').hidden=true;$('imp').hidden=true}
 $('epick').onclick=async()=>{const f=await api.pickFolder();if(f)$('ed').value=f};
 $('ereset').onclick=()=>{$('ed').value=''};
 $('ecancel').onclick=()=>{$('edit').hidden=true};
-$('esave').onclick=async()=>{await api.updateProfile({id:eid,name:$('en').value,downloadDir:$('ed').value});$('edit').hidden=true;draw()};
+$('esave').onclick=async()=>{await api.updateProfile({id:eid,name:$('en').value,downloadDir:$('ed').value,autoclick:{on:$('eac').checked,rules:$('eacr').value},scripts:[...$('esl').querySelectorAll('input:checked')].map(x=>x.value)});$('edit').hidden=true;draw()};
+$('esm').onclick=()=>api.openScripts();
+$('bulk').onclick=()=>{$('imp').hidden=!$('imp').hidden;$('form').hidden=true;$('edit').hidden=true;$('impm').textContent=''};
+$('impx').onclick=()=>{$('imp').hidden=true};
+$('impgo').onclick=async()=>{const r=await api.importProfiles($('impt').value);$('impm').textContent='Создано профилей: '+r.n+(r.bad.length?'. Не распознано строк: '+r.bad.length:'');if(r.n){$('impt').value='';draw()}};
 
 let cres=null;
 async function runCheck(p){const box=$('chk');box.hidden=false;$('cgeo').hidden=true;$('cgeo').disabled=false;$('ct').textContent='Проверяю подключение профиля «'+p.name+'»…';

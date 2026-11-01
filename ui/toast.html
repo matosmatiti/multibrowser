@@ -1,0 +1,25 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Загрузка</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--p:#f1f3f8;--t:#1b1f2a;--m:#5b6478;--b:#dde1ea;--a:#2f6fe4;--h:#e3e7f0;--g:#1a8f5a}
+@media(prefers-color-scheme:dark){:root{--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#242a38;--g:#3ecf8e}}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--t);font:13px/1.4 "Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none}
+[hidden]{display:none!important}
+#c{height:100%;box-sizing:border-box;border:1px solid var(--b);padding:12px 14px;display:flex;flex-direction:column;gap:8px;cursor:pointer;position:relative}
+.pop{animation:pop .2s ease-out}@keyframes pop{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:none}}
+.row{display:flex;gap:12px;align-items:center;padding-right:22px}
+.ic{width:34px;height:34px;border-radius:10px;background:var(--a);color:#fff;display:flex;align-items:center;justify-content:center;flex:none;transition:background .25s}
+.ic.ok{background:var(--g)}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+.mn{min-width:0;flex:1}.nm{font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.m{color:var(--m);font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.bar{height:4px;background:var(--b);border-radius:2px;overflow:hidden}.bar i{display:block;height:100%;width:0;background:var(--a);transition:width .25s}
+.ac{display:flex;gap:6px}
+button{font:inherit;color:var(--t);background:var(--p);border:1px solid var(--b);border-radius:6px;padding:3px 12px;cursor:pointer;transition:background .12s,transform .06s}
+button:hover{background:var(--h)}button:active{transform:scale(.95)}button:focus-visible{outline:2px solid var(--a)}
+#x{position:absolute;right:6px;top:6px;border:0;background:none;padding:2px 6px;color:var(--m)}#x svg{width:14px;height:14px}
+</style></head><body>
+<div id="c" class="pop"><button id="x" title="Закрыть" aria-label="Закрыть"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></button>
+<div class="row"><div class="ic" id="ic"><svg viewBox="0 0 24 24"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14"/></svg></div><div class="mn"><div class="nm" id="nm"></div><div class="m" id="sub"></div></div></div>
+<div class="bar" id="bw"><i id="bi"></i></div><div class="ac"><button id="b1"></button><button id="b2"></button></div></div>
+<script src="toast.js"></script></body></html>

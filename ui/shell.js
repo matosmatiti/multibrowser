@@ -43,4 +43,7 @@ $('addr').onkeydown=e=>{if(e.key==='Enter'){api.navigate($('addr').value);$('add
 $('fq').oninput=()=>{const q=$('fq').value;if(q)api.find({text:q,forward:true,next:false});else{api.stopFind();$('fc').textContent=''}};
 $('fq').onkeydown=e=>{if(e.key==='Enter')api.find({text:$('fq').value,forward:!e.shiftKey,next:true});else if(e.key==='Escape')closeFind()};
 $('fn').onclick=()=>api.find({text:$('fq').value,forward:true,next:true});$('fp').onclick=()=>api.find({text:$('fq').value,forward:false,next:true});$('fx').onclick=closeFind;
-render();
+let lastR='';const sendAnchor=()=>{const r=$('dl').getBoundingClientRect(),k=[r.left,r.right,r.top,r.bottom].join();if(k!==lastR){lastR=k;api.dlAnchor({left:r.left,right:r.right,top:r.top,bottom:r.bottom})}};
+api.onDlHit(()=>{const b=$('dl');b.classList.remove('hit');void b.offsetWidth;b.classList.add('hit')});
+window.addEventListener('resize',sendAnchor);new MutationObserver(sendAnchor).observe(document.body,{attributes:true});
+render();sendAnchor();

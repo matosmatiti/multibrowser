@@ -41,7 +41,7 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 #fq{flex:1;height:32px;border:1px solid var(--a);border-radius:16px;background:var(--p);padding:0 14px;color:inherit;font:inherit;user-select:text;outline:none;-webkit-app-region:no-drag}
 #fc{color:var(--m);min-width:40px;text-align:center}
 #updt{color:var(--a);font-size:12px;white-space:nowrap;padding:0 6px}
-#dl.act{color:var(--a)}#dlb{position:absolute;left:8px;right:8px;bottom:3px;height:3px;border-radius:2px;background:var(--a);transform-origin:left;transform:scaleX(0);transition:transform .25s}
+#dl.act{color:var(--a)}#dl.hit{animation:bump .5s ease-out}@keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.4);background:var(--h);color:var(--a)}100%{transform:scale(1)}}#dlb{position:absolute;left:8px;right:8px;bottom:3px;height:3px;border-radius:2px;background:var(--a);transform-origin:left;transform:scaleX(0);transition:transform .25s}
 #bmbar{position:absolute;left:var(--ox);right:0;top:var(--by);height:30px;display:flex;gap:2px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b);overflow:hidden}
 .bm{max-width:170px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:3px 9px;border-radius:7px}.bm:hover{background:var(--h)}.bm:active{transform:scale(.96)}.m{color:var(--m)}
 #lbar,#updbar{position:absolute;left:var(--ox);right:0;top:calc(var(--by) - 3px);height:3px;overflow:hidden;pointer-events:none}

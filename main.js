@@ -6,7 +6,7 @@ const {autoUpdater}=require('electron-updater');
 const RES=app.isPackaged?process.resourcesPath:path.join(__dirname,'resources');
 const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json');
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
-const DEF={search:'google',home:'google',customHome:'',theme:'system',restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true};
+const DEF={search:'google',home:'google',customHome:'',theme:'system',restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true};
 const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q='};
 let cfg={...DEF},manual=false;
 const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}};
@@ -14,10 +14,10 @@ const saveCfg=()=>{try{fs.writeFileSync(SETF(),JSON.stringify(cfg,null,1))}catch
 const applyTheme=()=>{nativeTheme.themeSource=['light','dark'].includes(cfg.theme)?cfg.theme:'system'};
 const homeUrl=()=>cfg.home==='blank'?'about:blank':(cfg.home==='custom'&&/^https?:\/\//i.test(cfg.customHome)?cfg.customHome:'https://www.google.com/');
 const searchUrl=()=>ENG[cfg.search]||ENG.google;
-const PAGES={bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
+const PAGES={scripts:{file:'ui/scripts.html',pid:'_sc',title:'Скрипты',icon:'⚡'},bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map(),tabs=[];
 const hooked=new Set(),live=new Map(),closedTabs=[];
-let menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
+let scripts=[],dlRect=null,toastV=null,toastOpen=false,toastId=null,toastT=null,toastHover=false,flyV=null,menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
 const LOG=()=>path.join(app.getPath('userData'),'log.txt');
 const log=m=>{try{fs.appendFileSync(LOG(),new Date().toISOString()+' '+m+'\n')}catch{}};
 let win,active=null,mode='top',nextId=1,restoring=true,quitting=false,saveT=null,started=false;
@@ -141,6 +141,7 @@ async function newTab(pid,url,bg){
  wc.once('dom-ready',()=>setTimeout(mkReady,60));setTimeout(mkReady,3500);
  wc.on('did-start-loading',()=>{t.loading=true;pushTabs()});wc.on('did-stop-loading',()=>{t.loading=false;mkReady();pushTabs()});
  applyGeo(wc,p);
+ wc.on('dom-ready',()=>runScripts(wc,pid,'dom-ready'));wc.on('did-finish-load',()=>runScripts(wc,pid,'load'));
  wc.setWindowOpenHandler(({url:u})=>{newTab(pid,u);return{action:'deny'}});
  wc.on('page-title-updated',(e,s)=>{t.title=s;if(t.h)t.h.title=s;saveHistSoon();pushTabs()});
  wc.on('did-navigate',(e,u)=>{t.url=u;t.h=addHistory(pid,u);pushTabs()});
@@ -243,6 +244,7 @@ function pushDownloads(){
  if(win&&!win.isDestroyed()&&!win.webContents.isDestroyed()){win.webContents.send('dl-summary',{active:act.length,percent:pct});
   if(!updating)win.setProgressBar(act.length?(tot>0?pct/100:2):-1)}
  if(panel&&panelOpen&&!panel.webContents.isDestroyed())panel.webContents.send('downloads',dlList());
+ pushToast();
 }
 function hookDownloads(ses,pid){   // каждый профиль качает в свою папку (если задана), иначе в общую
  if(hooked.has(pid))return;hooked.add(pid);
@@ -252,9 +254,12 @@ function hookDownloads(ses,pid){   // каждый профиль качает �
   const file=uniquePath(dir,item.getFilename());item.setSavePath(file);
   const d={id:crypto.randomUUID(),pid,name:path.basename(file),path:file,url:item.getURL(),total:item.getTotalBytes(),received:0,state:'progressing',paused:false,t:Date.now()};
   downloads.unshift(d);live.set(d.id,item);let last=0;
+  if(cfg.dlToast){const pt=screen.getCursorScreenPoint(),b=win.getContentBounds();let st={x:pt.x-b.x,y:pt.y-b.y};
+   if(st.x<0||st.y<0||st.x>b.width||st.y>b.height)st={x:b.width/2,y:b.height/2};flyDownload(st,()=>showToast(d.id))}
   item.on('updated',(ev,st)=>{d.received=item.getReceivedBytes();d.total=item.getTotalBytes();d.paused=item.isPaused();d.state=st==='interrupted'?'interrupted':'progressing';
    const n=Date.now();if(n-last>300){last=n;pushDownloads()}});
   item.once('done',(ev,st)=>{d.state=st;d.received=item.getReceivedBytes();live.delete(d.id);saveDownloads();pushDownloads();
+   if(cfg.dlToast&&(st==='completed'||st==='interrupted'))showToast(d.id,4500);
    if(st==='completed'&&win&&!win.isDestroyed()&&!win.isFocused())win.flashFrame(true)});
   pushDownloads();
  });
@@ -269,9 +274,9 @@ function setChromiumDownloadDir(id,p){   // усиленный режим: па�
  fs.writeFileSync(f,JSON.stringify(j));
 }
 const panelBounds=()=>{const b=win.getContentBounds(),y=topH();return{x:Math.max(b.width-392,0),y,width:380,height:Math.max(Math.min(460,b.height-y-10),120)}};
-const raisePanel=()=>{if(!win||win.isDestroyed())return;if(panelOpen&&panel)win.contentView.addChildView(panel);if(menuOpen&&menuV)win.contentView.addChildView(menuV)};
+const raisePanel=()=>{if(!win||win.isDestroyed())return;if(panelOpen&&panel)win.contentView.addChildView(panel);if(menuOpen&&menuV)win.contentView.addChildView(menuV);if(toastOpen&&toastV)win.contentView.addChildView(toastV)};
 function showPanel(){
- hideMenu();
+ hideMenu();hideToast();
  if(!panel){panel=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true});
   panel.webContents.loadFile('ui/downloads.html');
   panel.webContents.on('blur',()=>{if(panelOpen&&Date.now()-panelShownAt>200){hidePanel();lastBlurHide=Date.now()}});
@@ -314,7 +319,7 @@ const cursorAnchor=()=>{const pt=screen.getCursorScreenPoint(),b=win.getContentB
 function menuBounds(w,h){const b=win.getContentBounds(),a=menuAnchor||{x:12,y:44,align:'left'};let x=a.align==='right'?a.x-w:a.x;x=Math.max(6,Math.min(x,b.width-w-6));
  return{x,y:a.y,width:w,height:Math.max(60,Math.min(h,b.height-a.y-10,460))}}
 function showMenu(items,anchor,opts={}){
- hidePanel();menuActs=new Map();
+ hidePanel();hideToast();menuActs=new Map();
  const out=items.map((it,i)=>{const {fn,...r}=it;if(fn){r.id='a'+i;menuActs.set(r.id,fn)}return r});
  menuPayload={items:out,search:!!opts.search};menuAnchor=anchor||cursorAnchor();
  if(!menuV){menuV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});menuV.webContents.loadFile('ui/menu.html');
@@ -343,6 +348,7 @@ function mainMenu(anchor){
   {label:'История',hint:'Ctrl+H',fn:()=>openPage('history')},
   {label:'Загрузки',hint:'Ctrl+J',fn:()=>togglePanel()},
   {type:'sep'},
+  {label:'Скрипты',fn:()=>openPage('scripts')},
   {label:'Профили',fn:()=>openPage('manager')},
   {label:'Настройки',fn:()=>openPage('settings')},
   {type:'sep'},
@@ -403,6 +409,63 @@ async function checkConn(id){
  finally{if(held)dropTunnel(id)}
 }
 
+// ---------- всплывающее окно загрузки и анимация «полёта» ----------
+function toastItem(){const d=downloads.find(x=>x.id===toastId);if(!d)return null;const all=load();
+ return{...d,profile:(all.find(p=>p.id===d.pid)||{name:'—'}).name,folder:path.dirname(d.path),exists:d.state!=='completed'||fs.existsSync(d.path)}}
+function toastBounds(){const b=win.getContentBounds(),r=dlRect||{right:b.width-130,bottom:topH()-40},w=340,h=108;
+ return{x:Math.round(Math.min(Math.max(r.right-w,6),b.width-w-6)),y:Math.round(r.bottom+8),width:w,height:h}}
+function pushToast(){if(toastOpen&&toastV&&!toastV.webContents.isDestroyed())toastV.webContents.send('toast',toastItem())}
+function hideToast(){if(toastV)toastV.setVisible(false);toastOpen=false;clearTimeout(toastT)}
+function showToast(id,ms){
+ if(panelOpen||menuOpen||!win||win.isDestroyed())return;toastId=id;
+ if(!toastV){toastV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});toastV.webContents.loadFile('ui/toast.html')}
+ win.contentView.addChildView(toastV);toastV.setBounds(toastBounds());toastV.setVisible(true);toastOpen=true;pushToast();
+ clearTimeout(toastT);toastT=setTimeout(()=>{if(!toastHover)hideToast()},ms||5000);
+}
+function flyDownload(start,done){   // маленький значок летит от места клика к кнопке загрузок
+ try{
+  const b=win.getContentBounds(),end=dlRect?{x:(dlRect.left+dlRect.right)/2,y:(dlRect.top+dlRect.bottom)/2}:{x:b.width-170,y:60};
+  if(!flyV){flyV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});flyV.setBackgroundColor('#4c8dff');flyV.webContents.loadFile('ui/fly.html')}
+  win.contentView.addChildView(flyV);flyV.setVisible(true);
+  const t0=Date.now(),D=440,c={x:start.x+(end.x-start.x)*0.15,y:Math.min(start.y,end.y)-90};
+  const id=setInterval(()=>{
+   if(!win||win.isDestroyed()){clearInterval(id);return}
+   const k=Math.min((Date.now()-t0)/D,1),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2,u=1-e;
+   const x=u*u*start.x+2*u*e*c.x+e*e*end.x,y=u*u*start.y+2*u*e*c.y+e*e*end.y,sz=Math.round(40-22*e);
+   flyV.setBounds({x:Math.round(x-sz/2),y:Math.round(y-sz/2),width:sz,height:sz});
+   if(k>=1){clearInterval(id);flyV.setVisible(false);if(!win.webContents.isDestroyed())win.webContents.send('dl-hit');done()}
+  },16);
+ }catch(e){log('fly: '+e.message);done()}
+}
+
+// ---------- скрипты: автонажатие кнопок и свои скрипты ----------
+const SCF=()=>path.join(DATA(),'scripts.json');
+const loadScripts=()=>{try{scripts=JSON.parse(fs.readFileSync(SCF(),'utf8'))}catch{scripts=[]}};
+const saveScripts=()=>{try{fs.writeFileSync(SCF(),JSON.stringify(scripts,null,1))}catch{}};
+let preludeSrc=null;
+const prelude=()=>preludeSrc||(preludeSrc=fs.readFileSync(path.join(__dirname,'ui','mb-prelude.js'),'utf8'));
+function urlMatch(pat,url){
+ pat=(pat||'').trim();if(!pat||pat==='*'||pat==='<all_urls>')return true;
+ const esc=x=>x.replace(/[.+?^${}()|[\]\\]/g,'\\$&');let r;
+ if(pat.includes('://'))r='^'+esc(pat).replace(/\*/g,'.*')+'$';
+ else r='^https?://'+esc(pat).replace(/^\*\\\./,'(?:.*\\.)?').replace(/\*/g,'.*')+'(?::\\d+)?(?:/.*)?$';
+ try{return new RegExp(r).test(url)}catch{return false}
+}
+function runScripts(wc,pid,stage){
+ if(wc.isDestroyed())return;const p=prof(pid);if(!p)return;const url=wc.getURL();if(!/^https?:/i.test(url))return;
+ const run=code=>wc.executeJavaScript(code).catch(e=>log('script error: '+(e&&e.message)));
+ if(stage==='dom-ready'&&p.autoclick&&p.autoclick.on&&p.autoclick.rules){
+  const rules=[];
+  for(const line of p.autoclick.rules.split(/\r?\n/)){const l=line.trim();if(!l||l[0]==='#')continue;
+   const parts=l.split('|').map(x=>x.trim()),site=parts.length>1?parts[0]:'*',target=parts.length>1?parts[1]:parts[0],delay=parseInt(parts[2])||300;
+   if(target&&urlMatch(site,url))rules.push({target,delay})}
+  if(rules.length)run(prelude()+';MB.autoclick('+JSON.stringify(rules)+');');
+ }
+ for(const id of p.scripts||[]){const sc=scripts.find(x=>x.id===id);if(!sc||(sc.runAt||'dom-ready')!==stage)continue;
+  if(!(sc.match&&sc.match.length?sc.match:['*']).some(m=>urlMatch(m,url)))continue;
+  run(prelude()+';(async()=>{try{\n'+sc.code+'\n}catch(e){console.error("[MB скрипт]",e)}})();')}
+}
+
 // ---------- IPC ----------
 ipcMain.handle('list',()=>({profiles:view(),running:[...running.keys()]}));
 ipcMain.handle('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
@@ -450,9 +513,12 @@ ipcMain.handle('dlAction',(e,{id,action})=>{
 ipcMain.handle('find',(e,d)=>{const w=pageWc();if(w&&d.text)w.findInPage(d.text,{forward:d.forward!==false,findNext:!!d.next})});
 ipcMain.handle('stopFind',()=>{const w=pageWc();if(w)w.stopFindInPage('clearSelection')});
 ipcMain.handle('pickFolder',async()=>{const r=await dialog.showOpenDialog(win,{properties:['openDirectory','createDirectory']});return r.canceled?null:r.filePaths[0]});
-ipcMain.handle('getProfile',(e,id)=>{const p=prof(id);return p?{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p)}:null});
+ipcMain.handle('getProfile',(e,id)=>{const p=prof(id);return p?{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:p.scripts||[]}:null});
 ipcMain.handle('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return false;
- if(d.name&&d.name.trim())p.name=d.name.trim();if(d.downloadDir)p.downloadDir=d.downloadDir;else delete p.downloadDir;save(l);pushTabs();pushMgr();return true});
+ if(d.name&&d.name.trim())p.name=d.name.trim();if(d.downloadDir)p.downloadDir=d.downloadDir;else delete p.downloadDir;
+ if(d.autoclick)p.autoclick={on:!!d.autoclick.on,rules:String(d.autoclick.rules||'').slice(0,4000)};
+ if(Array.isArray(d.scripts))p.scripts=d.scripts.filter(x=>scripts.some(s=>s.id===x));
+ save(l);pushTabs();pushMgr();return true});
 ipcMain.handle('bmToggle',()=>bmToggle());
 ipcMain.handle('bmList',()=>bookmarks);
 ipcMain.handle('bmRemove',(e,id)=>{bookmarks=bookmarks.filter(b=>b.id!==id);saveBm();pushBm();pushTabs()});
@@ -469,10 +535,37 @@ ipcMain.handle('menuResize',(e,h)=>{if(menuOpen&&menuV)menuV.setBounds(menuBound
 ipcMain.handle('menuPick',(e,id)=>{const f=menuActs.get(id);hideMenu();if(f)setTimeout(f,0)});
 ipcMain.handle('checkConn',(e,id)=>checkConn(id));
 ipcMain.handle('applyGeo',(e,{id,tz,lang})=>{const l=load(),p=l.find(x=>x.id===id);if(!p)return false;if(tz)p.tz=tz;else delete p.tz;if(lang)p.lang=lang;else delete p.lang;save(l);pushMgr();return true});
+ipcMain.handle('toastGet',()=>toastItem());
+ipcMain.handle('toastHover',(e,h)=>{toastHover=!!h;if(!h){clearTimeout(toastT);toastT=setTimeout(hideToast,1800)}});
+ipcMain.handle('dlAnchor',(e,r)=>{dlRect=r});
+ipcMain.handle('toastAction',(e,{action,id})=>{
+ if(action==='panel'){hideToast();showPanel();return}
+ if(action==='close'){hideToast();return}
+ const d=downloads.find(x=>x.id===id);if(!d)return;const it=live.get(id);
+ if(action==='open')shell.openPath(d.path);else if(action==='show')shell.showItemInFolder(d.path);else if(action==='cancel'&&it)it.cancel();
+ if(action!=='cancel')hideToast()});
+ipcMain.handle('scList',()=>scripts);
+ipcMain.handle('scSave',(e,sc)=>{if(!sc||!(sc.name||'').trim())return null;let x=scripts.find(s=>s.id===sc.id);if(!x){x={id:uid()};scripts.push(x)}
+ x.name=sc.name.trim().slice(0,80);x.code=String(sc.code||'').slice(0,200000);
+ x.match=(Array.isArray(sc.match)?sc.match:String(sc.match||'').split(/\r?\n/)).map(m=>m.trim()).filter(Boolean);x.runAt=sc.runAt==='load'?'load':'dom-ready';saveScripts();return x.id});
+ipcMain.handle('scDelete',(e,id)=>{scripts=scripts.filter(s=>s.id!==id);saveScripts();const l=load();let ch=false;
+ for(const p of l)if(p.scripts&&p.scripts.includes(id)){p.scripts=p.scripts.filter(x=>x!==id);ch=true}if(ch)save(l)});
+ipcMain.handle('openScripts',()=>{openPage('scripts')});
+ipcMain.handle('importProfiles',(e,text)=>{const l=load(),bad=[];let n=0;
+ for(const raw of String(text).split(/\r?\n/)){const line=raw.trim();if(!line||line[0]==='#')continue;
+  let nm='',px='';if(line.includes('|')){const i=line.indexOf('|');nm=line.slice(0,i).trim();px=line.slice(i+1).trim()}else if(line.includes(':'))px=line;else nm=line;
+  const p={id:crypto.randomUUID(),name:nm||('Профиль '+(l.length+1)),seed:crypto.randomInt(1,2147483647)};
+  if(px){try{const u=new URL(px.includes('://')?px:'socks5://'+px),t=u.protocol.replace(':','');
+    if(!['http','https','socks5','socks'].includes(t)||!u.hostname)throw new Error('bad');
+    p.proxy={type:t.startsWith('http')?'http':'socks5',host:u.hostname,port:u.port||(t.startsWith('http')?'80':'1080')};
+    if(u.username){p.proxy.user=decodeURIComponent(u.username);p.proxy.pass=enc(decodeURIComponent(u.password||''))}}
+   catch{bad.push(line);continue}}
+  l.push(p);n++}
+ save(l);pushMgr();pushTabs();return{n,bad}});
 ipcMain.handle('showLog',()=>{shell.showItemInFolder(LOG())});
 const ovl=()=>{const d=nativeTheme.shouldUseDarkColors;return{color:d?'#181c25':'#f3f4f7',symbolColor:d?'#e6e9f0':'#1b1f2a',height:40}};
 app.whenReady().then(()=>{
- loadCfg();applyTheme();loadDownloads();loadBm();
+ loadCfg();applyTheme();loadDownloads();loadBm();loadScripts();
  try{if(fs.statSync(LOG()).size>200000)fs.rmSync(LOG())}catch{}
  log('start v'+app.getVersion());
  Menu.setApplicationMenu(null);
@@ -486,6 +579,7 @@ app.whenReady().then(()=>{
  win.on('show',()=>{if(win.getOpacity()<1&&!fading)fadeTo(1,170)});
  win.on('resize',()=>hideMenu());
  win.webContents.on('before-input-event',(e,i)=>{if(hotkey(i,win.webContents))e.preventDefault()});
+ win.on('resize',()=>hideToast());
  win.webContents.on('did-finish-load',()=>{layout();pushTabs();pushBm();if(!started){started=true;restoreSession()}});
  win.on('close',()=>{saveSession();quitting=true});
  setupUpdater();
