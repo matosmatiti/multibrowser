@@ -1,5 +1,5 @@
 // MultiBrowser: своя оболочка (вкладки разных аккаунтов в одном окне) + усиленный режим (движок fingerprint-chromium отдельным окном)
-const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell}=require('electron');
+const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen}=require('electron');
 const path=require('path'),fs=require('fs'),net=require('net'),crypto=require('crypto');
 const {spawn,spawnSync}=require('child_process');
 const {autoUpdater}=require('electron-updater');
@@ -17,7 +17,7 @@ const searchUrl=()=>ENG[cfg.search]||ENG.google;
 const PAGES={bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map(),tabs=[];
 const hooked=new Set(),live=new Map(),closedTabs=[];
-let bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
+let menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
 const LOG=()=>path.join(app.getPath('userData'),'log.txt');
 const log=m=>{try{fs.appendFileSync(LOG(),new Date().toISOString()+' '+m+'\n')}catch{}};
 let win,active=null,mode='top',nextId=1,restoring=true,quitting=false,saveT=null,started=false;
@@ -37,7 +37,7 @@ function cleanup(j){kill(j.wp);if(j.conf)try{fs.rmSync(j.conf,{force:true})}catc
 const PAL=['#ff7a59','#4c8dff','#3ecf8e','#b58cff','#ffc247','#ff6b9a','#2ec4c4','#9aa5b8'];
 const colorOf=id=>PAL[parseInt(id.replace(/-/g,'').slice(0,6),16)%PAL.length];
 const pushMgr=()=>{saveSoon();const t=tabs.find(x=>x.kind==='manager');if(t&&!t.view.webContents.isDestroyed())t.view.webContents.send('state',[...running.keys()])};
-const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),kind:p.vpn?'VPN-конфиг':p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси'}));
+const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),kind:(p.vpn?'VPN-конфиг':p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси')+(p.tz?' · '+p.tz:'')}));
 
 // ---------- подключения: прокси с логином и VPN-конфиги (WireGuard) через sing-box ----------
 const needsTunnel=p=>!!(p.vpn||(p.proxy&&p.proxy.user));
@@ -89,11 +89,28 @@ async function tunnelFor(p){
 function dropTunnel(id,force){const t=tunnels.get(id);if(!t)return;if(!force&&--t.n>0)return;cleanup(t);tunnels.delete(id)}
 
 // ---------- оболочка: вкладки ----------
+const bgColor=()=>nativeTheme.shouldUseDarkColors?'#12151c':'#ffffff';
+function mkView(wp){const v=new WebContentsView({webPreferences:wp});v.setBackgroundColor(bgColor());return v}   // для внутренних страниц и меню: тёмный фон вместо белого
+function fadeTo(v,ms){
+ if(!win||win.isDestroyed())return;const from=win.getOpacity(),n=Math.max(1,Math.round(ms/16));let i=0;fading=true;
+ const id=setInterval(()=>{i++;if(!win||win.isDestroyed()){clearInterval(id);fading=false;return}
+  win.setOpacity(from+(v-from)*Math.min(i/n,1));if(i>=n){clearInterval(id);fading=false}},16);
+}
+const langsOf=l=>l?`${l},${l.split('-')[0]};q=0.9`:'';
+function applyGeo(wc,p){   // часовой пояс и язык профиля (подмена на уровне страницы)
+ if(!p.tz&&!p.lang)return;
+ try{wc.debugger.attach('1.3')}catch{}
+ try{
+  if(p.tz)wc.debugger.sendCommand('Emulation.setTimezoneOverride',{timezoneId:p.tz}).catch(()=>{});
+  if(p.lang){wc.debugger.sendCommand('Emulation.setLocaleOverride',{locale:p.lang}).catch(()=>{});
+   wc.debugger.sendCommand('Emulation.setUserAgentOverride',{userAgent:wc.getUserAgent(),acceptLanguage:langsOf(p.lang)}).catch(()=>{})}
+ }catch(e){log('geo: '+e.message)}
+}
 const topH=()=>(mode==='side'?42:82)+(cfg.bmBar?30:0);
 function layout(){
  if(!win||win.isDestroyed())return;const b=win.getContentBounds(),W=b.width,H=b.height;
  const x=mode==='side'?240:0,y=topH();
- for(const t of tabs){const on=t.id===active;t.view.setVisible(on);if(on)t.view.setBounds({x,y,width:Math.max(W-x,1),height:Math.max(H-y,1)})}
+ for(const t of tabs){const on=t.id===active&&t.ready!==false;t.view.setVisible(on);if(on)t.view.setBounds({x,y,width:Math.max(W-x,1),height:Math.max(H-y,1)})}
  if(panel&&panelOpen)panel.setBounds(panelBounds());
 }
 function pushTabs(){
@@ -103,7 +120,7 @@ function pushTabs(){
  if(pg)lastPid=t.pid;
  const pgOf=id=>Object.values(PAGES).find(x=>x.pid===id),nm=id=>pgOf(id)?pgOf(id).title:(all.find(p=>p.id===id)||{name:'?'}).name;
  const col=id=>id[0]==='_'?'#8b93a5':colorOf(id);
- win.webContents.send('tabs',{mode,active,starred:!!(pg&&bookmarks.some(b=>b.url===t.url)),url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
+ win.webContents.send('tabs',{mode,active,loading:!!(t&&!t.kind&&t.loading),waiting:!!(t&&t.ready===false),starred:!!(pg&&bookmarks.some(b=>b.url===t.url)),url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
   profiles:[...new Set(tabs.map(x=>x.pid))].map(id=>({id,name:nm(id),color:col(id),icon:pgOf(id)?pgOf(id).icon:null})),
   tabs:tabs.map(x=>({id:x.id,pid:x.pid,title:x.kind?PAGES[x.kind].title:(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind?PAGES[x.kind].icon:nm(x.pid)[0].toUpperCase()}))});
 }
@@ -117,9 +134,13 @@ async function newTab(pid,url,bg){
   else await ses.setProxy({mode:'direct'});
  }catch(e){dialog.showErrorBox('MultiBrowser',e.message);return null}
  const v=new WebContentsView({webPreferences:{session:ses,contextIsolation:true,sandbox:true}});
- const t={id:nextId++,pid,view:v,title:'',url:url||homeUrl(),vpn};tabs.push(t);
+ const t={id:nextId++,pid,view:v,title:'',url:url||homeUrl(),vpn,ready:false,loading:true};tabs.push(t);
  const wc=v.webContents;
  wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
+ const mkReady=()=>{if(!t.ready){t.ready=true;layout();pushTabs()}};   // страница показывается, когда готова: без белой вспышки
+ wc.once('dom-ready',()=>setTimeout(mkReady,60));setTimeout(mkReady,3500);
+ wc.on('did-start-loading',()=>{t.loading=true;pushTabs()});wc.on('did-stop-loading',()=>{t.loading=false;mkReady();pushTabs()});
+ applyGeo(wc,p);
  wc.setWindowOpenHandler(({url:u})=>{newTab(pid,u);return{action:'deny'}});
  wc.on('page-title-updated',(e,s)=>{t.title=s;if(t.h)t.h.title=s;saveHistSoon();pushTabs()});
  wc.on('did-navigate',(e,u)=>{t.url=u;t.h=addHistory(pid,u);pushTabs()});
@@ -146,6 +167,7 @@ async function launch(id){
  try{setChromiumDownloadDir(id,p)}catch(e){log('chromium download dir: '+e.message)}
  const args=[`--user-data-dir=${path.join(DATA(),'profiles',id)}`,`--fingerprint=${p.seed}`,'--no-first-run','--no-default-browser-check','--restore-last-session'];
  if(proxy)args.push(`--proxy-server=${proxy}`,'--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
+ if(p.tz)args.push('--timezone='+p.tz);if(p.lang)args.push('--lang='+p.lang,'--accept-lang='+langsOf(p.lang));
  job.chrome=spawn(chrome,args);running.set(id,job);pushMgr();
  job.chrome.on('exit',()=>{cleanup(job);running.delete(id);pushMgr()});
 }
@@ -247,9 +269,10 @@ function setChromiumDownloadDir(id,p){   // усиленный режим: па�
  fs.writeFileSync(f,JSON.stringify(j));
 }
 const panelBounds=()=>{const b=win.getContentBounds(),y=topH();return{x:Math.max(b.width-392,0),y,width:380,height:Math.max(Math.min(460,b.height-y-10),120)}};
-const raisePanel=()=>{if(panelOpen&&panel&&win&&!win.isDestroyed())win.contentView.addChildView(panel)};
+const raisePanel=()=>{if(!win||win.isDestroyed())return;if(panelOpen&&panel)win.contentView.addChildView(panel);if(menuOpen&&menuV)win.contentView.addChildView(menuV)};
 function showPanel(){
- if(!panel){panel=new WebContentsView({webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
+ hideMenu();
+ if(!panel){panel=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true});
   panel.webContents.loadFile('ui/downloads.html');
   panel.webContents.on('blur',()=>{if(panelOpen&&Date.now()-panelShownAt>200){hidePanel();lastBlurHide=Date.now()}});
   panel.webContents.on('before-input-event',(e,i)=>{if(i.type==='keyDown'&&i.key==='Escape'){hidePanel();e.preventDefault()}})}
@@ -283,24 +306,49 @@ function openUrl(url,pid,pick){
  if(!/^(https?|file):/i.test(url))return;const all=load();
  if(pid&&all.some(p=>p.id===pid)){newTab(pid,url);return}
  if(!all.length)return;
- if(pick||!lastPid||!all.some(p=>p.id===lastPid)){Menu.buildFromTemplate(all.map(p=>({label:p.name,click:()=>newTab(p.id,url)}))).popup();return}
+ if(pick||!lastPid||!all.some(p=>p.id===lastPid)){profileMenu(null,url);return}
  newTab(lastPid,url);
 }
-function mainMenu(){
- const t=cur(),acc=a=>({accelerator:a,registerAccelerator:false});
- Menu.buildFromTemplate([
-  {label:'Новая вкладка',...acc('Ctrl+T'),click:()=>{if(t&&!t.kind)newTab(t.pid);else profileMenu()}},
-  {type:'separator'},
-  {label:'Закладки',...acc('Ctrl+Shift+O'),click:()=>openPage('bookmarks')},
-  {label:'История',...acc('Ctrl+H'),click:()=>openPage('history')},
-  {label:'Загрузки',...acc('Ctrl+J'),click:()=>togglePanel()},
-  {type:'separator'},
-  {label:'Профили',click:()=>openPage('manager')},
-  {label:'Настройки',click:()=>openPage('settings')},
-  {type:'separator'},
-  {label:'Показывать панель закладок',type:'checkbox',checked:!!cfg.bmBar,...acc('Ctrl+Shift+B'),click:()=>{cfg.bmBar=!cfg.bmBar;saveCfg();layout();pushBm()}},
-  {label:mode==='top'?'Вид: боковая панель':'Вид: вкладки сверху',click:()=>{mode=mode==='top'?'side':'top';layout();pushTabs()}}
- ]).popup();
+// ---------- выпадающие меню (свои, поверх страницы) ----------
+const cursorAnchor=()=>{const pt=screen.getCursorScreenPoint(),b=win.getContentBounds();return{x:pt.x-b.x,y:pt.y-b.y,align:'left'}};
+function menuBounds(w,h){const b=win.getContentBounds(),a=menuAnchor||{x:12,y:44,align:'left'};let x=a.align==='right'?a.x-w:a.x;x=Math.max(6,Math.min(x,b.width-w-6));
+ return{x,y:a.y,width:w,height:Math.max(60,Math.min(h,b.height-a.y-10,460))}}
+function showMenu(items,anchor,opts={}){
+ hidePanel();menuActs=new Map();
+ const out=items.map((it,i)=>{const {fn,...r}=it;if(fn){r.id='a'+i;menuActs.set(r.id,fn)}return r});
+ menuPayload={items:out,search:!!opts.search};menuAnchor=anchor||cursorAnchor();
+ if(!menuV){menuV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});menuV.webContents.loadFile('ui/menu.html');
+  menuV.webContents.on('blur',()=>{if(menuOpen&&Date.now()-menuShownAt>200){hideMenu();lastMenuBlur=Date.now()}});
+  menuV.webContents.on('before-input-event',(e,i)=>{if(i.type==='keyDown'&&i.key==='Escape'){hideMenu();e.preventDefault()}})}
+ win.contentView.addChildView(menuV);menuV.setBounds(menuBounds(270,120));menuV.setVisible(true);menuOpen=true;menuShownAt=Date.now();
+ menuV.webContents.focus();if(!menuV.webContents.isLoading())menuV.webContents.send('menu',menuPayload);
+}
+function hideMenu(){if(menuV)menuV.setVisible(false);menuOpen=false}
+function profileMenu(anchor,url){
+ const l=load();
+ if(!l.length){showMenu([{label:'Сначала создай профиль',disabled:true},{label:'Открыть «Профили»',fn:()=>openPage('manager')}],anchor);return}
+ const mk=(p,fn,tag)=>({label:p.name,color:colorOf(p.id),letter:p.name[0].toUpperCase(),tag,fn});
+ const items=[{type:'header',label:url?'Открыть в профиле':'Новая вкладка в профиле'}];
+ for(const p of l)items.push(mk(p,()=>newTab(p.id,url)));
+ if(!url){items.push({type:'sep'},{type:'header',label:'Усиленный режим (отдельное окно)'});
+  for(const p of l)items.push(mk(p,()=>launch(p.id).catch(x=>dialog.showErrorBox('MultiBrowser',x.message)),'усил.'))}
+ showMenu(items,anchor,{search:l.length>7});
+}
+function mainMenu(anchor){
+ const t=cur();
+ showMenu([
+  {label:'Новая вкладка',hint:'Ctrl+T',fn:()=>{if(t&&!t.kind)newTab(t.pid);else profileMenu()}},
+  {type:'sep'},
+  {label:'Закладки',hint:'Ctrl+Shift+O',fn:()=>openPage('bookmarks')},
+  {label:'История',hint:'Ctrl+H',fn:()=>openPage('history')},
+  {label:'Загрузки',hint:'Ctrl+J',fn:()=>togglePanel()},
+  {type:'sep'},
+  {label:'Профили',fn:()=>openPage('manager')},
+  {label:'Настройки',fn:()=>openPage('settings')},
+  {type:'sep'},
+  {label:'Панель закладок',hint:'Ctrl+Shift+B',checked:!!cfg.bmBar,fn:()=>{cfg.bmBar=!cfg.bmBar;saveCfg();layout();pushBm()}},
+  {label:mode==='top'?'Вид: боковая панель':'Вид: вкладки сверху',fn:()=>{mode=mode==='top'?'side':'top';layout();pushTabs()}}
+ ],anchor);
 }
 
 // ---------- горячие клавиши ----------
@@ -338,6 +386,23 @@ function hotkey(i,wc){
  return false;
 }
 
+// ---------- проверка подключения и язык/часовой пояс по IP ----------
+const LANG={US:'en-US',GB:'en-GB',DE:'de-DE',FR:'fr-FR',ES:'es-ES',IT:'it-IT',NL:'nl-NL',PL:'pl-PL',PT:'pt-PT',BR:'pt-BR',RU:'ru-RU',UA:'uk-UA',BY:'ru-BY',KZ:'ru-KZ',TR:'tr-TR',JP:'ja-JP',KR:'ko-KR',CN:'zh-CN',IN:'en-IN',CA:'en-CA',AU:'en-AU',SE:'sv-SE',NO:'nb-NO',FI:'fi-FI',DK:'da-DK',CZ:'cs-CZ',RO:'ro-RO',BG:'bg-BG',GR:'el-GR',HU:'hu-HU',AT:'de-AT',CH:'de-CH',BE:'nl-BE',IE:'en-IE',IL:'he-IL',AE:'ar-AE',SG:'en-SG',HK:'zh-HK',MX:'es-MX',AR:'es-AR',LT:'lt-LT',LV:'lv-LV',EE:'et-EE',MD:'ro-MD',GE:'ka-GE',AM:'hy-AM',AZ:'az-AZ'};
+async function checkConn(id){
+ const p=prof(id);if(!p)return{error:'Профиль не найден'};
+ const ses=session.fromPartition('persist:p-'+id);let held=false;
+ try{
+  if(needsTunnel(p)){const u=await tunnelFor(p);held=true;await ses.setProxy({proxyRules:u})}
+  else if(p.proxy)await ses.setProxy({proxyRules:`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`});
+  else await ses.setProxy({mode:'direct'});
+  const t0=Date.now(),r=await ses.fetch('https://ipinfo.io/json',{signal:AbortSignal.timeout(12000)});
+  if(!r.ok)throw new Error('сервис проверки ответил '+r.status);
+  const j=await r.json();
+  return{ip:j.ip,country:j.country,city:j.city,org:j.org,tz:j.timezone,lang:LANG[j.country]||'en-US',ms:Date.now()-t0};
+ }catch(e){log('check: '+e.message);return{error:e.message}}
+ finally{if(held)dropTunnel(id)}
+}
+
 // ---------- IPC ----------
 ipcMain.handle('list',()=>({profiles:view(),running:[...running.keys()]}));
 ipcMain.handle('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
@@ -351,11 +416,7 @@ ipcMain.handle('remove',(e,id)=>{for(const t of tabs.filter(x=>x.pid===id))close
  const j=running.get(id);if(j){kill(j.chrome);cleanup(j);running.delete(id)}save(load().filter(p=>p.id!==id))});
 ipcMain.handle('openInShell',(e,id)=>newTab(id));
 ipcMain.handle('newTab',(e,id)=>newTab(id));
-function profileMenu(){const l=load();
- const items=l.length?l.map(p=>({label:p.name,click:()=>newTab(p.id)})):[{label:'Сначала создай профиль (кнопка «Профили»)',enabled:false}];
- if(l.length)items.push({type:'separator'},{label:'Усиленный режим (отдельное окно)',submenu:l.map(p=>({label:p.name,click:()=>launch(p.id).catch(x=>dialog.showErrorBox('MultiBrowser',x.message))}))});
- Menu.buildFromTemplate(items).popup()}
-ipcMain.handle('newTabMenu',()=>profileMenu());
+ipcMain.handle('newTabMenu',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;profileMenu(a)});
 ipcMain.handle('activate',(e,id)=>{active=id;layout();pushTabs()});
 ipcMain.handle('closeTab',(e,id)=>closeTab(id));
 ipcMain.handle('navigate',(e,s)=>{const t=tabs.find(x=>x.id===active);if(t&&!t.kind)t.view.webContents.loadURL(norm(s))});
@@ -364,8 +425,9 @@ ipcMain.handle('nav',(e,a)=>{const t=tabs.find(x=>x.id===active);if(!t||t.kind)r
 ipcMain.handle('setMode',(e,m)=>{mode=m==='side'?'side':'top';layout();pushTabs()});
 function openPage(kind,bg){   // внутренние страницы («Профили», «Настройки») открываются как вкладки
  const def=PAGES[kind],ex=tabs.find(x=>x.kind===kind);if(ex){if(!bg){active=ex.id;layout();pushTabs()}return ex}
- const v=new WebContentsView({webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
- const t={id:nextId++,pid:def.pid,kind,view:v,title:def.title,url:''};tabs.push(t);
+ const v=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true});
+ const t={id:nextId++,pid:def.pid,kind,view:v,title:def.title,url:'',ready:false};tabs.push(t);
+ v.webContents.once('did-finish-load',()=>{t.ready=true;layout();pushTabs()});setTimeout(()=>{if(!t.ready){t.ready=true;layout();pushTabs()}},2500);
  v.webContents.on('before-input-event',(e,i)=>{if(hotkey(i,v.webContents))e.preventDefault()});
  win.contentView.addChildView(v);if(!bg||active===null)active=t.id;v.webContents.loadFile(def.file);layout();pushTabs();return t;
 }
@@ -401,7 +463,12 @@ ipcMain.handle('histList',(e,{q})=>{const all=load(),nm=id=>(all.find(p=>p.id===
  return history.filter(h=>!s||(h.title+' '+h.url).toLowerCase().includes(s)).slice(0,500).map(h=>({...h,profile:nm(h.pid)}))});
 ipcMain.handle('histRemove',(e,id)=>{history=history.filter(h=>h.id!==id);saveHistNow()});
 ipcMain.handle('histClear',()=>{history=[];saveHistNow()});
-ipcMain.handle('showMenu',()=>mainMenu());
+ipcMain.handle('showMenu',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;mainMenu(a)});
+ipcMain.handle('menuGet',()=>menuPayload);
+ipcMain.handle('menuResize',(e,h)=>{if(menuOpen&&menuV)menuV.setBounds(menuBounds(270,h))});
+ipcMain.handle('menuPick',(e,id)=>{const f=menuActs.get(id);hideMenu();if(f)setTimeout(f,0)});
+ipcMain.handle('checkConn',(e,id)=>checkConn(id));
+ipcMain.handle('applyGeo',(e,{id,tz,lang})=>{const l=load(),p=l.find(x=>x.id===id);if(!p)return false;if(tz)p.tz=tz;else delete p.tz;if(lang)p.lang=lang;else delete p.lang;save(l);pushMgr();return true});
 ipcMain.handle('showLog',()=>{shell.showItemInFolder(LOG())});
 const ovl=()=>{const d=nativeTheme.shouldUseDarkColors;return{color:d?'#181c25':'#f3f4f7',symbolColor:d?'#e6e9f0':'#1b1f2a',height:40}};
 app.whenReady().then(()=>{
@@ -409,14 +476,20 @@ app.whenReady().then(()=>{
  try{if(fs.statSync(LOG()).size>200000)fs.rmSync(LOG())}catch{}
  log('start v'+app.getVersion());
  Menu.setApplicationMenu(null);
- win=new BrowserWindow({width:1280,height:800,title:'MultiBrowser',backgroundColor:'#12151c',titleBarStyle:'hidden',titleBarOverlay:ovl(),
-  webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
+ win=new BrowserWindow({width:1280,height:800,title:'MultiBrowser',backgroundColor:bgColor(),show:false,titleBarStyle:'hidden',titleBarOverlay:ovl(),
+  webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false}});
  win.loadFile('ui/shell.html');
+ win.once('ready-to-show',()=>{win.setOpacity(0);win.show();fadeTo(1,240)});   // плавное появление при запуске
+ setTimeout(()=>{if(win&&!win.isDestroyed()&&!win.isVisible()){win.show();win.setOpacity(1)}},4000);
+ win.on('minimize',()=>{try{win.setOpacity(0)}catch{}});                         // скрываем кадр перерисовки при разворачивании
+ win.on('restore',()=>setTimeout(()=>fadeTo(1,170),100));
+ win.on('show',()=>{if(win.getOpacity()<1&&!fading)fadeTo(1,170)});
+ win.on('resize',()=>hideMenu());
  win.webContents.on('before-input-event',(e,i)=>{if(hotkey(i,win.webContents))e.preventDefault()});
  win.webContents.on('did-finish-load',()=>{layout();pushTabs();pushBm();if(!started){started=true;restoreSession()}});
  win.on('close',()=>{saveSession();quitting=true});
  setupUpdater();
- nativeTheme.on('updated',()=>{try{win.setTitleBarOverlay(ovl())}catch{}});
+ nativeTheme.on('updated',()=>{try{win.setTitleBarOverlay(ovl());win.setBackgroundColor(bgColor());for(const t of tabs)if(t.kind)t.view.setBackgroundColor(bgColor());if(panel)panel.setBackgroundColor(bgColor());if(menuV)menuV.setBackgroundColor(bgColor())}catch{}});
  for(const ev of ['resize','maximize','unmaximize','enter-full-screen','leave-full-screen'])win.on(ev,layout);
  win.on('closed',()=>app.quit());
 });

@@ -1,0 +1,20 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<title>Меню</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--p:#f1f3f8;--t:#1b1f2a;--m:#5b6478;--b:#dde1ea;--a:#2f6fe4;--h:#e3e7f0}
+@media(prefers-color-scheme:dark){:root{--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#242a38}}
+html,body{height:100%;margin:0;background:var(--bg);color:var(--t);font:13px/1.4 "Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none}
+[hidden]{display:none!important}
+#box{height:100%;display:flex;flex-direction:column;border:1px solid var(--b);box-sizing:border-box}
+#s{margin:8px 8px 4px;padding:7px 11px;border:1px solid var(--b);border-radius:8px;background:var(--p);color:inherit;font:inherit;outline:none}#s:focus{border-color:var(--a)}
+#list{flex:1;overflow:auto;padding:4px}
+.it{display:flex;align-items:center;gap:10px;width:100%;text-align:left;padding:7px 10px;border:0;border-radius:8px;background:none;color:inherit;font:inherit;cursor:pointer;transition:background .12s,transform .06s}
+.it:hover,.it.sel{background:var(--h)}.it:active{transform:scale(.98)}.it:disabled{opacity:.45;cursor:default}
+.dot{width:22px;height:22px;border-radius:6px;color:#0b0f17;font-weight:700;font-size:12px;display:flex;align-items:center;justify-content:center;flex:none}
+.chk{width:22px;text-align:center;color:var(--a);flex:none}.lb{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.hint{color:var(--m);font-size:11px}
+.hd{padding:8px 10px 4px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--m)}.sp{height:1px;background:var(--b);margin:4px 6px}
+.pop{animation:pop .14s ease-out}@keyframes pop{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+</style></head><body>
+<div id="box"><input id="s" placeholder="Найти профиль…" aria-label="Поиск" hidden><div id="list"><div id="in"></div></div></div>
+<script src="menu.js"></script></body></html>

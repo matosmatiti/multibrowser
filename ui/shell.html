@@ -1,48 +1,76 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8">
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
 <title>MultiBrowser</title>
 <style>
-:root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--h:#e4e7ef}
+:root{color-scheme:light dark;--bg:#fff;--p:#f1f3f8;--t:#1b1f2a;--m:#5b6478;--b:#dde1ea;--a:#2f6fe4;--h:#e3e7f0;--ox:0px;--by:82px;--oy:82px}
 @media(prefers-color-scheme:dark){:root{--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--h:#222836}}
-*{box-sizing:border-box}html,body{margin:0;height:100%;overflow:hidden;font:13px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--t);user-select:none}
-button,input{font:inherit;color:var(--t)}button{background:none;border:0;border-radius:6px;padding:4px 8px;cursor:pointer;-webkit-app-region:no-drag}button:hover:not(:disabled){background:var(--h)}button:disabled{opacity:.35}
-#top{position:absolute;left:0;right:0;top:0;height:40px;display:flex;align-items:flex-end;gap:2px;padding:0 150px 0 8px;background:var(--p);-webkit-app-region:drag}
-#tabs{display:flex;gap:2px;align-items:flex-end;min-width:0;flex:0 1 auto;overflow:hidden}#grab{flex:1;height:100%}
-#plus{margin-bottom:4px;font-size:16px}
-#bar{position:absolute;left:0;right:0;top:40px;height:42px;display:flex;gap:6px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b)}
-#addr{flex:1;height:30px;border:1px solid var(--b);border-radius:15px;background:var(--p);padding:0 14px;user-select:text;-webkit-app-region:no-drag}
-#side{position:absolute;left:0;top:0;bottom:0;width:240px;background:var(--p);border-right:1px solid var(--b);overflow:auto;padding:0 8px 8px;display:none}
-#brand{height:40px;display:flex;align-items:center;font-weight:600;margin:0 -8px;padding:0 12px;-webkit-app-region:drag}
-body.side #top{display:none}body.side #side{display:block}body.side #bar{left:240px;top:0;padding-right:150px;-webkit-app-region:drag}
-.tab{display:flex;align-items:center;gap:6px;height:32px;min-width:48px;max-width:210px;flex:0 1 210px;padding:0 6px 0 8px;border-radius:8px 8px 0 0;border-top:3px solid var(--c);cursor:pointer;color:var(--m);-webkit-app-region:no-drag}
-.tab.act{background:var(--bg);color:var(--t)}.tab:hover{background:var(--h)}
-.dot{flex:none;width:18px;height:18px;border-radius:5px;background:var(--c);color:#0b0f17;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center}
-.ttl{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.x{padding:0 6px}
-.gh{display:flex;align-items:center;gap:6px;margin:10px 4px 4px;font-weight:600}.gh .dot{width:20px;height:20px}.gh span:nth-child(2){flex:1}
-body.side .tab{border-top:0;border-left:3px solid var(--c);border-radius:6px;max-width:none;margin:1px 0}
-#empty{position:absolute;left:0;right:0;top:82px;bottom:0;display:flex;align-items:center;justify-content:center;color:var(--m);text-align:center;padding:20px}
-body.side #empty{left:240px;top:42px}
-button{transition:background .12s,transform .06s,filter .12s;cursor:pointer}
-button:hover:not(:disabled){background:var(--h)}
-button.p:hover:not(:disabled){background:var(--a);filter:brightness(1.12)}
-button:active:not(:disabled){transform:scale(.95);filter:brightness(.9)}
-button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a);outline-offset:1px}
-#updt{color:var(--a);font-size:12px;white-space:nowrap}#updbar{position:absolute;left:0;right:0;top:79px;height:3px;background:var(--b)}#updbar[hidden]{display:none}#updbar div{height:100%;width:0;background:var(--a);transition:width .2s}body.side #updbar{left:240px;top:39px}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--t);font:13px/1.4 "Segoe UI",system-ui,sans-serif;user-select:none}
+svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
 [hidden]{display:none!important}
-#dl{position:relative}#dl.act{color:var(--a)}#dlb{position:absolute;left:6px;right:6px;bottom:1px;height:3px;border-radius:2px;background:var(--a);transform-origin:left;transform:scaleX(0);transition:transform .2s}
-#findbox{flex:1;display:flex;gap:6px;align-items:center}#fq{flex:1;height:30px;border:1px solid var(--b);border-radius:15px;background:var(--p);padding:0 14px;user-select:text;-webkit-app-region:no-drag}#fc{color:var(--m);min-width:36px;text-align:center}
-#star{font-size:15px}#star.on{color:#f5b301}
-#bmbar{position:absolute;left:0;right:0;top:82px;height:30px;display:flex;gap:2px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b);overflow:hidden}
-body.side #bmbar{left:240px;top:42px}.bm{max-width:170px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:2px 8px}
-body.bm #empty{top:112px}body.side.bm #empty{top:72px}
+button{font:inherit;color:inherit;background:none;border:0;cursor:pointer;-webkit-app-region:no-drag;transition:background .15s,transform .08s,color .15s,opacity .15s}
+button:focus-visible,input:focus-visible{outline:2px solid var(--a);outline-offset:1px}
+.ib{width:32px;height:32px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;position:relative;flex:none}
+.ib:hover:not(:disabled){background:var(--h)}.ib:active:not(:disabled){transform:scale(.86)}.ib:disabled{opacity:.3;cursor:default}
+.ib.sm{width:26px;height:26px}.ib.sm svg{width:15px;height:15px}
+#top{position:absolute;left:0;right:0;top:0;height:40px;display:flex;align-items:flex-end;gap:2px;padding:0 150px 0 8px;background:var(--p);-webkit-app-region:drag}
+#tabs{display:flex;gap:3px;align-items:flex-end;min-width:0;flex:0 1 auto;overflow:hidden;height:100%;padding-top:6px}
+#plus{margin-bottom:4px}#grab{flex:1;height:100%}
+#bar{position:absolute;left:0;right:0;top:40px;height:42px;display:flex;gap:4px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b)}
+#aw{flex:1;display:flex;align-items:center;height:32px;border:1px solid var(--b);border-radius:16px;background:var(--p);padding:0 3px 0 14px;transition:border-color .15s,box-shadow .15s;-webkit-app-region:no-drag}
+#aw:focus-within{border-color:var(--a);box-shadow:0 0 0 3px color-mix(in srgb,var(--a) 22%,transparent)}
+#addr{flex:1;min-width:0;border:0;background:none;outline:none;color:inherit;font:inherit;user-select:text}
+#star.on svg{fill:#f5b301;stroke:#f5b301}#star{width:28px;height:28px}
+#side{position:absolute;left:0;top:0;bottom:0;width:240px;background:var(--p);border-right:1px solid var(--b);overflow:auto;padding:0 8px 8px;display:none}
+#brand{height:40px;display:flex;align-items:center;font-weight:600;margin:0 -8px;padding:0 14px;-webkit-app-region:drag}
+body.side #top{display:none}body.side #side{display:block}
+body.side #bar{left:240px;top:0;padding-right:150px;-webkit-app-region:drag}
+.tab{display:flex;align-items:center;gap:7px;height:32px;min-width:44px;max-width:220px;flex:0 1 220px;padding:0 4px 0 9px;border-radius:9px 9px 0 0;color:var(--m);cursor:pointer;position:relative;transition:background .18s,color .18s;-webkit-app-region:no-drag}
+.tab::after{content:"";position:absolute;left:9px;right:9px;top:0;height:2px;border-radius:0 0 2px 2px;background:var(--c);opacity:0;transition:opacity .18s}
+.tab:hover{background:var(--h)}.tab.act{background:var(--bg);color:var(--t)}.tab.act::after{opacity:1}
+.tab.new{animation:tin .22s ease-out}@keyframes tin{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
+.dot{flex:none;width:18px;height:18px;border-radius:5px;background:var(--c);color:#0b0f17;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center}
+.ttl{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.x{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;opacity:0;flex:none}.x svg{width:13px;height:13px}
+.tab:hover .x,.tab.act .x{opacity:.75}.x:hover{background:var(--b);opacity:1}
+body.side .tab{width:100%;max-width:none;flex:none;height:30px;margin:1px 0;border-radius:8px}
+body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto;border-radius:0 3px 3px 0}
+.gh{display:flex;align-items:center;gap:7px;margin:12px 4px 4px;font-weight:600}.gh .dot{width:20px;height:20px}.gh span:nth-child(2){flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.nb{width:100%;text-align:left;padding:8px 10px;margin-top:8px;border-radius:8px;color:var(--m)}.nb:hover{background:var(--h);color:var(--t)}
+#findbox{flex:1;display:flex;gap:4px;align-items:center}
+#fq{flex:1;height:32px;border:1px solid var(--a);border-radius:16px;background:var(--p);padding:0 14px;color:inherit;font:inherit;user-select:text;outline:none;-webkit-app-region:no-drag}
+#fc{color:var(--m);min-width:40px;text-align:center}
+#updt{color:var(--a);font-size:12px;white-space:nowrap;padding:0 6px}
+#dl.act{color:var(--a)}#dlb{position:absolute;left:8px;right:8px;bottom:3px;height:3px;border-radius:2px;background:var(--a);transform-origin:left;transform:scaleX(0);transition:transform .25s}
+#bmbar{position:absolute;left:var(--ox);right:0;top:var(--by);height:30px;display:flex;gap:2px;align-items:center;padding:0 10px;background:var(--bg);border-bottom:1px solid var(--b);overflow:hidden}
+.bm{max-width:170px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding:3px 9px;border-radius:7px}.bm:hover{background:var(--h)}.bm:active{transform:scale(.96)}.m{color:var(--m)}
+#lbar,#updbar{position:absolute;left:var(--ox);right:0;top:calc(var(--by) - 3px);height:3px;overflow:hidden;pointer-events:none}
+#lbar{opacity:0;transition:opacity .25s}#lbar.on{opacity:1}
+#lbar i{display:block;width:30%;height:100%;border-radius:2px;background:var(--a);animation:slide 1.1s ease-in-out infinite}@keyframes slide{0%{transform:translateX(-100%)}100%{transform:translateX(340%)}}
+#updbar{background:var(--b)}#updbar div{height:100%;width:0;background:var(--a);transition:width .25s}
+#empty,#ph{position:absolute;left:var(--ox);right:0;top:var(--oy);bottom:0;display:flex;flex-direction:column;gap:14px;align-items:center;justify-content:center;text-align:center;color:var(--m);padding:20px;opacity:0;pointer-events:none;transition:opacity .3s}
+#empty.on,#ph.on{opacity:1}
+.sp{width:26px;height:26px;border:3px solid var(--b);border-top-color:var(--a);border-radius:50%;animation:spin .8s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
 </style></head><body>
-<div id="top"><div id="tabs"></div><button id="plus" title="Новая вкладка">+</button><div id="grab"></div></div>
+<div id="top"><div id="tabs"></div><button id="plus" class="ib" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><div id="grab"></div></div>
 <div id="side"><div id="brand">MultiBrowser</div><div id="groups"></div></div>
-<div id="bar"><button id="back" title="Назад">◀</button><button id="fwd" title="Вперёд">▶</button><button id="rl" title="Обновить">⟳</button>
-<input id="addr" aria-label="Адресная строка" placeholder="Введи адрес или поисковый запрос"><button id="star" title="В закладки (Ctrl+D)" aria-label="В закладки">☆</button>
-<span id="findbox" hidden><input id="fq" placeholder="Найти на странице" aria-label="Поиск на странице"><span id="fc"></span><button id="fp" title="Предыдущее">▲</button><button id="fn" title="Следующее">▼</button><button id="fx" title="Закрыть">✕</button></span>
-<span id="updt" hidden></span><button id="dl" title="Загрузки (Ctrl+J)" aria-label="Загрузки">⬇<i id="dlb"></i></button><button id="mode" title="Переключить вид: вкладки сверху / боковая панель">▤ Вид</button><button id="mgr">Профили</button><button id="set" title="Настройки" aria-label="Настройки">⚙</button><button id="menu" title="Меню" aria-label="Меню">⋮</button></div>
+<div id="bar">
+<button id="back" class="ib" title="Назад (Alt+←)" aria-label="Назад"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
+<button id="fwd" class="ib" title="Вперёд (Alt+→)" aria-label="Вперёд"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>
+<button id="rl" class="ib" title="Обновить (F5)" aria-label="Обновить"><svg viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.6-5.9M20 4v5h-5"/></svg></button>
+<div id="aw"><input id="addr" aria-label="Адресная строка" placeholder="Введи адрес или поисковый запрос"><button id="star" class="ib" title="В закладки (Ctrl+D)" aria-label="В закладки"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9-4.3-4.1 5.9-.8z"/></svg></button></div>
+<span id="findbox" hidden><input id="fq" placeholder="Найти на странице" aria-label="Поиск на странице"><span id="fc"></span>
+<button id="fp" class="ib sm" title="Предыдущее"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button id="fn" class="ib sm" title="Следующее"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><button id="fx" class="ib sm" title="Закрыть"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></button></span>
+<span id="updt" hidden></span>
+<button id="dl" class="ib" title="Загрузки (Ctrl+J)" aria-label="Загрузки"><svg viewBox="0 0 24 24"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14"/></svg><i id="dlb"></i></button>
+<button id="mode" class="ib" title="Вид: вкладки сверху / боковая панель" aria-label="Вид"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>
+<button id="mgr" class="ib" title="Профили" aria-label="Профили"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.5"/><path d="M5 20a7 7 0 0 1 14 0"/></svg></button>
+<button id="set" class="ib" title="Настройки" aria-label="Настройки"><svg viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg></button>
+<button id="menu" class="ib" title="Меню" aria-label="Меню"><svg viewBox="0 0 24 24"><circle cx="12" cy="5" r="1.5" fill="currentColor"/><circle cx="12" cy="12" r="1.5" fill="currentColor"/><circle cx="12" cy="19" r="1.5" fill="currentColor"/></svg></button>
+</div>
 <div id="bmbar" hidden></div>
+<div id="lbar"><i></i></div>
 <div id="updbar" hidden><div></div></div>
-<div id="empty">Нет открытых вкладок.<br>Нажми «+» и выбери профиль, либо открой «Профили».</div>
+<div id="ph"><div class="sp"></div><div>Открываю страницу…</div></div>
+<div id="empty">Нет открытых вкладок.<br>Нажми «+» и выбери профиль, либо открой «Профили» (значок справа).</div>
 <script src="shell.js"></script></body></html>
