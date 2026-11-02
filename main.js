@@ -1,5 +1,5 @@
 // MultiBrowser: своя оболочка (вкладки разных аккаунтов в одном окне) + усиленный режим (движок fingerprint-chromium отдельным окном)
-const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen}=require('electron');
+const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen,clipboard}=require('electron');
 const path=require('path'),fs=require('fs'),net=require('net'),crypto=require('crypto');
 const {spawn,spawnSync}=require('child_process');
 const {autoUpdater}=require('electron-updater');
@@ -7,7 +7,7 @@ const RES=app.isPackaged?process.resourcesPath:path.join(__dirname,'resources');
 const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json');
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
 try{let sd='force';try{sd=JSON.parse(fs.readFileSync(SETF(),'utf8')).siteDark||'force'}catch{}if(sd==='force')app.commandLine.appendSwitch('enable-features','WebContentsForceDark')}catch{}   // сайты по умолчанию в тёмной теме
-const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,ver:2};
+const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',ver:2};
 const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q='};
 let cfg={...DEF},manual=false;
 const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}
@@ -57,26 +57,27 @@ function parseWg(text){
  for(let line of text.split(/\r?\n/)){line=line.trim();if(!line||line[0]==='#'||line[0]===';')continue;
   const m=line.match(/^\[(\w+)\]$/);if(m){cur=m[1]==='Interface'?I:(m[1]==='Peer'&&!peers++?P:null);continue}
   const i=line.indexOf('=');if(i<0||!cur)continue;cur[line.slice(0,i).trim().toLowerCase()]=line.slice(i+1).trim()}
- let converted=false;   // AmneziaWG без смены заголовков (S=0, H=1..4) совместим с обычным WireGuard: маскировку просто отбрасываем
- if(['jc','jmin','jmax','s1','s2','s3','s4','h1','h2','h3','h4','i1','i2','i3','i4','i5','id','ip','ib'].some(k=>k in I)){
-  const n=k=>I[k]===undefined?0:(parseInt(I[k])||0),hd=(k,d)=>I[k]===undefined||String(I[k]).trim()===String(d);
-  if(![1,2,3,4].every(x=>n('s'+x)===0)||![1,2,3,4].every(x=>hd('h'+x,x)))
-   throw new Error('Это конфиг AmneziaWG с изменёнными заголовками (параметры S и H). Такой сервер не принимает обычный WireGuard, нужен другой конфиг.');
-  converted=true;
+ const AK=['jc','jmin','jmax','s1','s2','s3','s4','h1','h2','h3','h4','i1','i2','i3','i4','i5','id','ip','ib'];let awg=null,awgCompat=false;
+ if(AK.some(k=>k in I)){   // параметры AmneziaWG 2.0 (и маскировка id/ip/ib): передаём ядру sing-box-lx как есть
+  awg={};for(const k of AK){if(!(k in I))continue;const v=String(I[k]).trim();
+   awg[k]=/^(jc|jmin|jmax|s[1-4])$/.test(k)?(parseInt(v)||0):/^h[1-4]$/.test(k)?(/^\d+$/.test(v)?Number(v):v):v}
+  const n=k=>(k in I)?(parseInt(I[k])||0):0,hd=(k,d)=>!(k in I)||String(I[k]).trim()===String(d);
+  awgCompat=[1,2,3,4].every(x=>n('s'+x)===0)&&[1,2,3,4].every(x=>hd('h'+x,x));   // можно ли обойтись обычным WireGuard
  }
  const e=(P.endpoint||'').match(/^\[?([^\]]+?)\]?:(\d+)$/);
  if(!I.privatekey||!I.address||!P.publickey||!e)throw new Error('В конфиге не хватает данных (PrivateKey, Address, PublicKey или Endpoint).');
  const dns=(I.dns||'').split(',').map(x=>x.trim()).filter(Boolean);
  return {address:I.address.split(',').map(x=>x.trim()),privateKey:I.privatekey,mtu:+I.mtu||1280,dns:dns.find(x=>/^\d+\.\d+\.\d+\.\d+$/.test(x))||dns[0]||'1.1.1.1',
-  host:e[1],port:+e[2],pub:P.publickey,psk:P.presharedkey,keepalive:+P.persistentkeepalive||25,converted};
+  host:e[1],port:+e[2],pub:P.publickey,psk:P.presharedkey,keepalive:+P.persistentkeepalive||25,awg,awgCompat};
 }
-function singConfig(p,port){
- const c={log:{level:'error'},inbounds:[{type:'mixed',tag:'in',listen:'127.0.0.1',listen_port:port}]};
+function singConfig(p,port,wg,lx){
+ const c={log:{level:'warn'},inbounds:[{type:'mixed',tag:'in',listen:'127.0.0.1',listen_port:port}]};
  const boot={type:'udp',tag:'boot',server:'1.1.1.1'};
  if(p.vpn){
-  const w=parseWg(dec(p.vpn));
-  c.endpoints=[{type:'wireguard',tag:'proxy',address:w.address,private_key:w.privateKey,mtu:w.mtu,
+  const w=wg||parseWg(dec(p.vpn));
+  c.endpoints=[{type:'wireguard',tag:'proxy',address:w.address,private_key:w.privateKey,mtu:(lx&&w.awg)?Math.min(w.mtu,1280):w.mtu,
    peers:[{address:w.host,port:w.port,public_key:w.pub,...(w.psk?{pre_shared_key:w.psk}:{}),allowed_ips:['0.0.0.0/0','::/0'],persistent_keepalive_interval:w.keepalive}]}];
+  if(lx&&w.awg)Object.assign(c.endpoints[0],w.awg);
   c.dns={servers:[boot,{type:'udp',tag:'tun',server:w.dns,detour:'proxy'}],final:'tun'};
  }else{
   const x=p.proxy,o={type:x.type==='http'?'http':'socks',tag:'proxy',server:x.host,server_port:+x.port,username:x.user,password:dec(x.pass||'')};
@@ -88,13 +89,15 @@ function singConfig(p,port){
 }
 async function makeTunnel(p,tag){
  const port=await freePort(),dir=path.join(DATA(),'run');fs.mkdirSync(dir,{recursive:true});
- const conf=path.join(dir,tag+p.id+'.json'),exe=path.join(RES,'sing-box.exe');
- fs.writeFileSync(conf,JSON.stringify(singConfig(p,port)));   // сам конфиг лежит на диске только пока профиль открыт
+ const wg=p.vpn?parseWg(dec(p.vpn)):null,lxExe=path.join(RES,'sing-box-lx.exe'),lx=!!(wg&&wg.awg&&fs.existsSync(lxExe));
+ if(wg&&wg.awg&&!lx&&!wg.awgCompat)throw new Error('Конфиг AmneziaWG требует ядра sing-box-lx, а его нет в этой сборке.');
+ const conf=path.join(dir,tag+p.id+'.json'),exe=lx?lxExe:path.join(RES,'sing-box.exe');
+ fs.writeFileSync(conf,JSON.stringify(singConfig(p,port,wg,lx)));   // сам конфиг лежит на диске только пока профиль открыт
  const chk=spawnSync(exe,['check','-c',conf],{windowsHide:true,encoding:'utf8'});
  if(chk.status!==0){try{fs.rmSync(conf,{force:true})}catch{}const m=((chk.stderr||chk.stdout||chk.error&&chk.error.message||'')+'').trim().split('\n').pop();log('sing-box check: '+m);throw new Error('Не удалось применить настройки подключения: '+m)}
  const wp=spawn(exe,['run','-c',conf],{windowsHide:true});let out='';
  const add=d=>{out=(out+d).slice(-800)};wp.stdout.on('data',add);wp.stderr.on('data',add);
- return {wp,conf,port,n:1,err:()=>out.trim().split('\n').pop()||'туннель не отвечает',ready:waitPort(port)};
+ return {wp,conf,port,n:1,err:()=>out.trim().split('\n').pop()||'туннель не отвечает',dump:()=>out,ready:waitPort(port)};
 }
 async function tunnelFor(p){
  let t=tunnels.get(p.id);
@@ -143,7 +146,7 @@ function pushTabs(){
 async function newTab(pid,url,bg){
  const p=prof(pid);if(!p)return null;
  const W=curW;
- const ses=session.fromPartition('persist:p-'+pid);hookDownloads(ses,pid);adblockSession(ses,pid);   // у каждого профиля свои куки, кэш и хранилище
+ const ses=session.fromPartition('persist:p-'+pid);hookDownloads(ses,pid);adblockSession(ses,pid);permSession(ses,pid);   // у каждого профиля свои куки, кэш и хранилище
  let vpn=false;
  try{
   if(needsTunnel(p)){const u=await tunnelFor(p);vpn=true;await ses.setProxy({proxyRules:u})}
@@ -155,7 +158,8 @@ async function newTab(pid,url,bg){
  const t={id:nextId++,pid,view:v,title:'',url:url||homeUrl(),vpn,ready:false,loading:true,W,blocked:0};tabs.push(t);
  const wc=v.webContents;
  const on=(ev,fn)=>wc.on(ev,(...a)=>{if(useW(t.W))fn(...a)}),once=(ev,fn)=>wc.once(ev,(...a)=>{if(useW(t.W))fn(...a)});
- on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace)t.blocked=0});
+ on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false}});
+ on('context-menu',(e,pr)=>ctxMenu(t,pr));
  wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
  const mkReady=()=>{if(!t.ready&&useW(t.W)){t.ready=true;layout();pushTabs()}};   // страница показывается, когда готова: без белой вспышки
  once('dom-ready',()=>setTimeout(mkReady,60));setTimeout(mkReady,3500);
@@ -350,7 +354,8 @@ function openUrl(url,pid,pick){
 // ---------- выпадающие меню (свои, поверх страницы) ----------
 const cursorAnchor=()=>{const pt=screen.getCursorScreenPoint(),b=win.getContentBounds();return{x:pt.x-b.x,y:pt.y-b.y,align:'left'}};
 function menuBounds(w,h){const b=win.getContentBounds(),a=menuAnchor||{x:12,y:44,align:'left'};let x=a.align==='right'?a.x-w:a.x;x=Math.max(6,Math.min(x,b.width-w-6));
- return{x,y:a.y,width:w,height:Math.max(60,Math.min(h,b.height-a.y-10,460))}}
+ const hh=Math.max(60,Math.min(h,b.height-20,460));let y=a.y;if(y+hh>b.height-8)y=Math.max(8,b.height-hh-8);
+ return{x,y,width:w,height:hh}}
 function showMenu(items,anchor,opts={}){
  hidePanel();hideToast();menuActs=new Map();
  const out=items.map((it,i)=>{const {fn,...r}=it;if(fn){r.id='a'+i;menuActs.set(r.id,fn)}return r});
@@ -380,6 +385,7 @@ function mainMenu(anchor){
   {label:'Закладки',hint:'Ctrl+Shift+O',fn:()=>openPage('bookmarks')},
   {label:'История',hint:'Ctrl+H',fn:()=>openPage('history')},
   {label:'Загрузки',hint:'Ctrl+J',fn:()=>togglePanel()},
+  ...(t&&!t.kind?[{label:t.translated?'Показать оригинал':'Перевести страницу',fn:()=>translateToggle(t)}]:[]),
   {type:'sep'},
   {label:'Скрипты',fn:()=>openPage('scripts')},
   {label:'Профили',fn:()=>openPage('manager')},
@@ -421,6 +427,7 @@ function hotkey(i,wc){
  if(c&&plus){zoom(1);return true}
  if(c&&minus){zoom(-1);return true}
  if(c&&dg==='0'){zoom(0);return true}
+ if(c&&!sh&&L==='u'&&w&&t){newTab(t.pid,'view-source:'+w.getURL());return true}
  if(c&&!sh&&!al&&L==='d'){bmToggle();return true}
  if(c&&sh&&L==='o'){openPage('bookmarks');return true}
  if(c&&!sh&&L==='h'){openPage('history');return true}
@@ -441,7 +448,7 @@ async function checkConn(id){
   if(!r.ok)throw new Error('сервис проверки ответил '+r.status);
   const j=await r.json();
   return{ip:j.ip,country:j.country,city:j.city,org:j.org,tz:j.timezone,lang:LANG[j.country]||'en-US',ms:Date.now()-t0};
- }catch(e){log('check: '+e.message);return{error:e.message}}
+ }catch(e){const t=tunnels.get(id),extra=t&&t.err?' · ядро: '+t.err():'';log('check: '+e.message+extra+(t&&t.dump?' | '+t.dump():''));return{error:e.message+extra}}
  finally{if(held)dropTunnel(id)}
 }
 
@@ -458,19 +465,21 @@ function showToast(id,ms){
  attach(toastV);toastV.setBounds(toastBounds());toastV.setVisible(true);toastOpen=true;pushToast();
  clearTimeout(toastT);toastT=setTimeout(()=>{if(!toastHover)hideToast()},ms||5000);
 }
-function flyDownload(start,done){   // маленький значок летит от места клика к кнопке загрузок
+function ensureFly(){if(!flyV){flyV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});flyV.setBackgroundColor('#4c8dff');flyV.webContents.loadFile('ui/fly.html')}return flyV}
+function flyDownload(start,done){   // значок летит от места клика к кнопке загрузок (позиция меняется плавно, размер постоянный)
  try{
-  const b=win.getContentBounds(),R=curW&&curW.dlRect,end=R?{x:(R.left+R.right)/2,y:(R.top+R.bottom)/2}:{x:b.width-170,y:60};
-  if(!flyV){flyV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});flyV.setBackgroundColor('#4c8dff');flyV.webContents.loadFile('ui/fly.html')}
-  attach(flyV);flyV.setVisible(true);
-  const t0=Date.now(),D=440,c={x:start.x+(end.x-start.x)*0.15,y:Math.min(start.y,end.y)-90};
-  const id=setInterval(()=>{
-   if(!win||win.isDestroyed()){clearInterval(id);return}
-   const k=Math.min((Date.now()-t0)/D,1),e=k<.5?2*k*k:1-Math.pow(-2*k+2,2)/2,u=1-e;
-   const x=u*u*start.x+2*u*e*c.x+e*e*end.x,y=u*u*start.y+2*u*e*c.y+e*e*end.y,sz=Math.round(40-22*e);
-   flyV.setBounds({x:Math.round(x-sz/2),y:Math.round(y-sz/2),width:sz,height:sz});
-   if(k>=1){clearInterval(id);flyV.setVisible(false);if(!win.webContents.isDestroyed())win.webContents.send('dl-hit');done()}
-  },16);
+  const w0=win,b=w0.getContentBounds(),R=curW&&curW.dlRect,end=R?{x:(R.left+R.right)/2,y:(R.top+R.bottom)/2}:{x:b.width-170,y:60};
+  ensureFly();attach(flyV);const SZ=28;
+  flyV.setBounds({x:Math.round(start.x-SZ/2),y:Math.round(start.y-SZ/2),width:SZ,height:SZ});flyV.setVisible(true);
+  const t0=Date.now(),D=640,c={x:start.x+(end.x-start.x)*0.12,y:Math.min(start.y,end.y)-110};
+  const ease=k=>k<.5?4*k*k*k:1-Math.pow(-2*k+2,3)/2;
+  const step=()=>{
+   if(!w0||w0.isDestroyed())return;
+   const k=Math.min((Date.now()-t0)/D,1),e=ease(k),u=1-e;
+   const x=u*u*start.x+2*u*e*c.x+e*e*end.x,y=u*u*start.y+2*u*e*c.y+e*e*end.y;
+   flyV.setBounds({x:Math.round(x-SZ/2),y:Math.round(y-SZ/2),width:SZ,height:SZ});
+   if(k>=1){flyV.setVisible(false);if(!w0.webContents.isDestroyed())w0.webContents.send('dl-hit');done()}else setTimeout(step,4)};
+  step();
  }catch(e){log('fly: '+e.message);done()}
 }
 
@@ -487,12 +496,17 @@ function urlMatch(pat,url){
  else r='^https?://'+esc(pat).replace(/^\*\\\./,'(?:.*\\.)?').replace(/\*/g,'.*')+'(?::\\d+)?(?:/.*)?$';
  try{return new RegExp(r).test(url)}catch{return false}
 }
+const PRESETS=[
+ {id:'claude-continue',name:'Claude: нажимать «Продолжить», когда кнопка становится активной',rules:'claude.ai | Продолжить | 300\nclaude.ai | Continue | 300'},
+ {id:'cookies',name:'Принимать окна cookie («Принять все», «Accept all»)',rules:'* | Принять все | 800\n* | Принять все файлы cookie | 800\n* | Accept all | 800\n* | Accept all cookies | 800'},
+ {id:'yt-skip',name:'YouTube: нажимать «Пропустить рекламу»',rules:'youtube.com | .ytp-skip-ad-button | 200\nyoutube.com | .ytp-ad-skip-button-modern | 200\nyoutube.com | .ytp-ad-skip-button | 200'}];
 function runScripts(wc,pid,stage){
  if(wc.isDestroyed())return;const p=prof(pid);if(!p)return;const url=wc.getURL();if(!/^https?:/i.test(url))return;
  const run=code=>wc.executeJavaScript(code).catch(e=>log('script error: '+(e&&e.message)));
- if(stage==='dom-ready'&&p.autoclick&&p.autoclick.on&&p.autoclick.rules){
+ const txt=((p.autoclick&&p.autoclick.on)?(p.autoclick.rules||''):'')+'\n'+(p.presets||[]).map(id=>(PRESETS.find(x=>x.id===id)||{}).rules||'').join('\n');
+ if(stage==='dom-ready'&&txt.trim()){
   const rules=[];
-  for(const line of p.autoclick.rules.split(/\r?\n/)){const l=line.trim();if(!l||l[0]==='#')continue;
+  for(const line of txt.split(/\r?\n/)){const l=line.trim();if(!l||l[0]==='#')continue;
    const parts=l.split('|').map(x=>x.trim()),site=parts.length>1?parts[0]:'*',target=parts.length>1?parts[1]:parts[0],delay=parseInt(parts[2])||300;
    if(target&&urlMatch(site,url))rules.push({target,delay})}
   if(rules.length)run(prelude()+';MB.autoclick('+JSON.stringify(rules)+');');
@@ -555,12 +569,98 @@ function detachTab(id,x,y){
  W2.win.contentView.addChildView(t.view);layout();pushTabs();
 }
 
+// ---------- разрешения сайтов (камера, микрофон, геолокация, уведомления) ----------
+const PERM_ASK={geolocation:'к вашему местоположению','media':'к камере и микрофону','display-capture':'к записи экрана',midi:'к MIDI-устройствам','clipboard-read':'к чтению буфера обмена'};
+const permHooked=new Set();
+function permSession(ses,pid){
+ if(permHooked.has(pid))return;permHooked.add(pid);
+ ses.setPermissionRequestHandler((wc,perm,cb,details)=>{
+  const p=prof(pid);if(!p){cb(false);return}
+  if(perm==='notifications'){cb(p.notify!==false);return}
+  const ask=PERM_ASK[perm];if(!ask){cb(true);return}
+  let origin='';try{origin=new URL((details&&details.requestingUrl)||wc.getURL()).origin}catch{}
+  const key=origin+'|'+perm,saved=(p.perms||{})[key];
+  if(saved!==undefined){cb(saved);return}
+  appDialog({title:'Разрешение сайта',message:origin.replace(/^https?:\/\//,'')+' запрашивает доступ '+ask,detail:'Профиль: '+p.name+'. Решение запомнится для этого сайта.',buttons:['Разрешить','Блокировать'],defaultId:1,cancelId:1,type:'question'})
+   .then(r=>{const ok=r.response===0,l=load(),q=l.find(x=>x.id===pid);if(q){q.perms=q.perms||{};q.perms[key]=ok;save(l)}cb(ok)});
+ });
+ ses.setPermissionCheckHandler((wc,perm)=>{if(perm==='notifications'){const p=prof(pid);return !p||p.notify!==false}return true});
+}
+
+// ---------- перевод страницы ----------
+const LANGS={ru:'русский',en:'английский',uk:'украинский',de:'немецкий',fr:'французский',es:'испанский',it:'итальянский',pl:'польский',tr:'турецкий','zh-CN':'китайский'};
+const trSrc=n=>fs.readFileSync(path.join(__dirname,'ui',n),'utf8');
+async function gtxBatch(ses,batch,to){
+ const r=await ses.fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&dt=t&tl='+encodeURIComponent(to),{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(batch.join('\n')),credentials:'omit',signal:AbortSignal.timeout(20000)});
+ if(!r.ok)throw new Error('сервис перевода ответил '+r.status);
+ const d=await r.json();return ((d&&d[0])||[]).map(x=>(x&&x[0])||'').join('').split('\n');
+}
+async function translateTexts(ses,texts,to){
+ const out=new Array(texts.length).fill(null);let i=0;
+ while(i<texts.length){
+  let j=i,len=0;const batch=[];
+  while(j<texts.length&&batch.length<60&&(len+texts[j].length<3500||!batch.length)){const x=texts[j].replace(/\s+/g,' ').slice(0,3000);batch.push(x);len+=x.length+1;j++}
+  let lines=null;try{lines=await gtxBatch(ses,batch,to)}catch(e){if(i===0)throw e}
+  if(lines&&lines.length===batch.length)for(let k=0;k<batch.length;k++)out[i+k]=lines[k];
+  else for(let k=0;k<batch.length;k++){try{const l=await gtxBatch(ses,[batch[k]],to);out[i+k]=l.join(' ')}catch{}}   // запасной путь: по одной строке
+  i=j;
+ }
+ return out;
+}
+async function translatePage(t,lang){
+ if(!t||t.kind)return;const wc=t.view.webContents,W=t.W,to=lang||cfg.translateTo||'ru';
+ try{
+  t.loading=true;if(useW(W))pushTabs();
+  const strs=await wc.executeJavaScript(trSrc('tr-collect.js'));
+  if(!strs||!strs.length){t.loading=false;if(useW(W))pushTabs();return}
+  const res=await translateTexts(wc.session,strs,to);
+  await wc.executeJavaScript('window.__mbTrIn='+JSON.stringify(res)+';'+trSrc('tr-apply.js'));
+  t.translated=true;
+ }catch(e){log('translate: '+e.message);appDialog({title:'Перевод',type:'error',message:'Не удалось перевести страницу: '+e.message})}
+ t.loading=false;if(useW(W))pushTabs();
+}
+async function translateToggle(t){
+ if(!t||t.kind)return;
+ if(t.translated){try{await t.view.webContents.executeJavaScript(trSrc('tr-restore.js'))}catch{}t.translated=false;if(useW(t.W))pushTabs()}
+ else await translatePage(t);
+}
+
+// ---------- контекстное меню страницы (правая кнопка) ----------
+function ctxMenu(t,pr){
+ const wc=t.view.webContents,vb=t.view.getBounds?t.view.getBounds():{x:0,y:topH()},items=[],sel=(pr.selectionText||'').trim(),link=pr.linkURL,img=pr.mediaType==='image'&&pr.srcURL,f=pr.editFlags||{};
+ const cut=x=>x.length>26?x.slice(0,26)+'…':x;
+ if(link)items.push({label:'Открыть ссылку в новой вкладке',fn:()=>newTab(t.pid,link)},{label:'Открыть ссылку в профиле…',fn:()=>profileMenu(null,link)},{label:'Копировать адрес ссылки',fn:()=>clipboard.writeText(link)},{type:'sep'});
+ if(img)items.push({label:'Открыть изображение в новой вкладке',fn:()=>newTab(t.pid,pr.srcURL)},{label:'Сохранить изображение как…',fn:()=>wc.downloadURL(pr.srcURL)},{label:'Копировать изображение',fn:()=>wc.copyImageAt(pr.x,pr.y)},{label:'Копировать адрес изображения',fn:()=>clipboard.writeText(pr.srcURL)},{type:'sep'});
+ if(pr.isEditable)items.push({label:'Отменить',hint:'Ctrl+Z',disabled:!f.canUndo,fn:()=>wc.undo()},{label:'Вырезать',hint:'Ctrl+X',disabled:!f.canCut,fn:()=>wc.cut()},{label:'Копировать',hint:'Ctrl+C',disabled:!f.canCopy,fn:()=>wc.copy()},{label:'Вставить',hint:'Ctrl+V',disabled:!f.canPaste,fn:()=>wc.paste()},{label:'Выделить всё',hint:'Ctrl+A',fn:()=>wc.selectAll()},{type:'sep'});
+ else if(sel)items.push({label:'Копировать',hint:'Ctrl+C',fn:()=>wc.copy()},{label:'Найти «'+cut(sel)+'» в поиске',fn:()=>newTab(t.pid,searchUrl()+encodeURIComponent(sel))},{type:'sep'});
+ if(!link&&!img&&!sel&&!pr.isEditable){const nh=wc.navigationHistory;
+  items.push({label:'Назад',hint:'Alt+←',disabled:!nh.canGoBack(),fn:()=>nh.goBack()},{label:'Вперёд',hint:'Alt+→',disabled:!nh.canGoForward(),fn:()=>nh.goForward()},{label:'Обновить',hint:'F5',fn:()=>wc.reload()},{type:'sep'})}
+ items.push({label:t.translated?'Показать оригинал':'Перевести на '+(LANGS[cfg.translateTo]||'русский'),fn:()=>translateToggle(t)},
+  {label:'Печать…',hint:'Ctrl+P',fn:()=>wc.print()},{label:'Просмотр кода страницы',hint:'Ctrl+U',fn:()=>newTab(t.pid,'view-source:'+wc.getURL())},{label:'Исследовать элемент',hint:'F12',fn:()=>wc.inspectElement(pr.x,pr.y)});
+ showMenu(items,{x:vb.x+pr.x,y:vb.y+pr.y,align:'left'});
+}
+
+// ---------- перетаскивание вкладок между окнами ----------
+let drag=null;
+function stripAt(x,y,exclude){
+ for(const W of windows){if(W.dead||W===exclude)continue;const b=W.win.getBounds();
+  if(W.mode==='top'?(x>=b.x&&x<=b.x+b.width&&y>=b.y&&y<=b.y+44):(x>=b.x&&x<=b.x+240&&y>=b.y&&y<=b.y+b.height))return W}
+ return null;
+}
+function moveTabToWindow(t,from,to,idx){
+ useW(from);const i=tabs.indexOf(t);if(i<0)return;
+ tabs.splice(i,1);try{win.contentView.removeChildView(t.view)}catch{}
+ if(active===t.id)setActive(tabs.length?tabs[Math.max(0,i-1)].id:null);layout();pushTabs();
+ t.W=to;useW(to);tabs.splice(idx==null?tabs.length:idx,0,t);setActive(t.id);win.contentView.addChildView(t.view);layout();pushTabs();to.win.focus();
+ if(!from.tabs.length&&!from.dead&&windows.filter(x=>!x.dead).length>1)from.win.close();
+}
+
 // ---------- IPC ----------
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
 H('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
  return r.canceled?null:{name:path.basename(r.filePaths[0]),text:fs.readFileSync(r.filePaths[0],'utf8')}});
 H('add',(e,d)=>{const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};let note='';
- if(d.mode==='vpn'&&d.confText){try{if(parseWg(d.confText).converted){p.vpnNote='awg';note='Конфиг AmneziaWG автоматически преобразован в обычный WireGuard: параметры маскировки отброшены. Если сервер без них не работает, подключение не поднимется.'}}catch(x){return{error:x.message}}p.vpn=enc(d.confText)}
+ if(d.mode==='vpn'&&d.confText){try{if(parseWg(d.confText).awg){p.vpnNote='awg';note='Обнаружен конфиг AmneziaWG: для него используется отдельное ядро sing-box-lx, параметры маскировки сохраняются.'}}catch(x){return{error:x.message}}p.vpn=enc(d.confText)}
  else if(d.mode==='proxy'&&d.host){p.proxy={type:d.type,host:d.host,port:d.port};if(d.user){p.proxy.user=d.user;p.proxy.pass=enc(d.pass||'')}}
  l.push(p);save(l);pushTabs();pushMgr();return{ok:true,note}});
 H('launch',async(e,id)=>{try{await launch(id);return null}catch(x){return x.message}});
@@ -605,12 +705,14 @@ H('find',(e,d)=>{const w=pageWc();if(w&&d.text)w.findInPage(d.text,{forward:d.fo
 H('stopFind',()=>{const w=pageWc();if(w)w.stopFindInPage('clearSelection')});
 H('pickFolder',async()=>{const r=await dialog.showOpenDialog(win,{properties:['openDirectory','createDirectory']});return r.canceled?null:r.filePaths[0]});
 H('getProfile',(e,id)=>{const p=prof(id);if(!p)return null;const x=p.proxy;
- return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:p.scripts||[],
+ return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:p.scripts||[],presets:p.presets||[],notify:p.notify!==false,
   conn:{mode:p.vpn?'vpn':x?'proxy':'none',type:x?x.type:'socks5',host:x?x.host:'',port:x?x.port:'',user:(x&&x.user)||'',hasPass:!!(x&&x.pass),hasVpn:!!p.vpn,vpnNote:!!p.vpnNote}}});
 H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{error:'Профиль не найден'};
  if(d.name&&d.name.trim())p.name=d.name.trim();if(d.downloadDir)p.downloadDir=d.downloadDir;else delete p.downloadDir;
  if(d.autoclick)p.autoclick={on:!!d.autoclick.on,rules:String(d.autoclick.rules||'').slice(0,4000)};
  if(Array.isArray(d.scripts))p.scripts=d.scripts.filter(x=>scripts.some(s=>s.id===x));
+ if(Array.isArray(d.presets))p.presets=d.presets.filter(x=>PRESETS.some(s=>s.id===x));
+ if(typeof d.notify==='boolean')p.notify=d.notify;
  let note='';const c=d.conn;
  if(c){
   if(c.mode==='none'){delete p.proxy;delete p.vpn;delete p.vpnNote}
@@ -620,7 +722,7 @@ H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{e
    if(c.user){p.proxy.user=c.user;if(c.pass)p.proxy.pass=enc(c.pass);else if(old.pass)p.proxy.pass=old.pass}
    delete p.vpn;delete p.vpnNote}
   else if(c.mode==='vpn'){
-   if(c.confText){try{const w=parseWg(c.confText);p.vpn=enc(c.confText);if(w.converted){p.vpnNote='awg';note='Конфиг AmneziaWG автоматически преобразован в обычный WireGuard.'}else delete p.vpnNote}catch(x){return{error:x.message}}}
+   if(c.confText){try{const w=parseWg(c.confText);p.vpn=enc(c.confText);if(w.awg){p.vpnNote='awg';note='Обнаружен конфиг AmneziaWG: используется ядро sing-box-lx.'}else delete p.vpnNote}catch(x){return{error:x.message}}}
    else if(!p.vpn)return{error:'Выбери файл VPN-конфига (.conf)'};
    delete p.proxy}
  }
@@ -668,6 +770,28 @@ H('importProfiles',(e,text)=>{const l=load(),bad=[];let n=0;
    catch{bad.push(line);continue}}
   l.push(p);n++}
  save(l);pushMgr();pushTabs();return{n,bad}});
+H('presetList',()=>PRESETS.map(x=>({id:x.id,name:x.name})));
+H('resetPerms',(e,id)=>{const l=load(),p=l.find(x=>x.id===id);if(p){delete p.perms;save(l)}return true});
+H('translatePage',()=>{const t=cur();if(t)translateToggle(t)});
+H('dragStart',(e,{id,x,y,gx,gy})=>{
+ const i=tabs.findIndex(t=>t.id===id);if(i<0)return false;const src=curW,t=tabs[i],sb=src.win.getBounds();
+ if(tabs.length>1){
+  tabs.splice(i,1);try{win.contentView.removeChildView(t.view)}catch{}
+  if(active===id)setActive(tabs[Math.max(0,i-1)].id);layout();pushTabs();
+  const W2=createWindow({bounds:{x:Math.round(x-gx),y:Math.round(y-gy),width:sb.width,height:sb.height},instant:true});
+  W2.mode=src.mode;t.W=W2;W2.tabs.push(t);W2.active=t.id;useW(W2);W2.win.contentView.addChildView(t.view);layout();pushTabs();
+  drag={W:W2,t,gx,gy,hint:null};
+ }else drag={W:src,t,gx,gy,hint:null};
+ return true});
+ipcMain.on('dragMove',(e,{x,y})=>{
+ if(!drag||drag.W.dead)return;drag.W.win.setPosition(Math.round(x-drag.gx),Math.round(y-drag.gy));
+ const T=stripAt(x,y,drag.W);
+ if(T!==drag.hint){if(drag.hint&&!drag.hint.dead)drag.hint.win.webContents.send('drop-hint',false);if(T)T.win.webContents.send('drop-hint',true);drag.hint=T}});
+H('dragEnd',(e,{x,y})=>{
+ if(!drag)return;const d=drag;drag=null;
+ if(d.hint&&!d.hint.dead)d.hint.win.webContents.send('drop-hint',false);
+ const T=d.W.dead?null:stripAt(x,y,d.W);
+ if(T)moveTabToWindow(d.t,d.W,T,null);else if(!d.W.dead&&useW(d.W)){layout();pushTabs()}});
 H('moveTab',(e,{id,to})=>{const i=tabs.findIndex(x=>x.id===id);if(i<0)return;const [t]=tabs.splice(i,1);tabs.splice(Math.max(0,Math.min(to,tabs.length)),0,t);pushTabs()});
 H('detachTab',(e,{id,x,y})=>detachTab(id,x,y));
 H('tabMenu',(e,{id,anchor})=>{
@@ -695,7 +819,7 @@ function createWindow(o={}){
   webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false}});
  W.win=w;windows.push(W);w.loadFile('ui/shell.html');
  const c=fn=>(...a)=>{if(useW(W))fn(...a)};
- w.once('ready-to-show',c(()=>{w.setOpacity(0);w.show();fadeTo(1,240)}));   // плавное появление
+ w.once('ready-to-show',c(()=>{if(o.instant){w.show();return}w.setOpacity(0);w.show();fadeTo(1,240)}));   // плавное появление
  setTimeout(()=>{if(!w.isDestroyed()&&!w.isVisible()){w.show();w.setOpacity(1)}},4000);
  w.on('minimize',()=>{try{w.setOpacity(0)}catch{}});                         // скрываем кадр перерисовки при разворачивании
  w.on('restore',()=>setTimeout(c(()=>fadeTo(1,170)),100));
@@ -713,8 +837,9 @@ app.whenReady().then(()=>{
  loadCfg();applyTheme();loadDownloads();loadBm();loadScripts();loadAds();
  try{if(fs.statSync(LOG()).size>200000)fs.rmSync(LOG())}catch{}
  log('start v'+app.getVersion());
+ try{app.setAppUserModelId('app.multibrowser')}catch{}
  Menu.setApplicationMenu(null);
- createWindow({first:true});
+ createWindow({first:true});ensureFly();
  setupUpdater();
  setTimeout(()=>updateAds(false).catch(()=>{}),15000);setInterval(()=>updateAds(false).catch(()=>{}),12*3600*1000);
  nativeTheme.on('updated',()=>{for(const W of windows){if(W.dead)continue;try{W.win.setTitleBarOverlay(ovl());W.win.setBackgroundColor(bgColor());for(const t of W.tabs)if(t.kind)t.view.setBackgroundColor(bgColor())}catch{}}

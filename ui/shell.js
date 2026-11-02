@@ -8,23 +8,29 @@ const TMAX=220,TMIN=40;
 function tabW(){if(S.mode==='side')return 0;const n=Math.max(S.tabs.length,1),avail=window.innerWidth-8-150-40-8;return Math.max(TMIN,Math.min(TMAX,Math.floor(avail/n)))}
 function startDrag(e,t,d){
  if(e.button!==0||S.mode!=='top'||e.target.closest('.x'))return;
- const sx=e.clientX,sy=e.clientY,strip=$('tabs');let on=false,ind=null,idx=0;
+ const sx=e.clientX,sy=e.clientY,strip=$('tabs'),rect=d.getBoundingClientRect(),gx=8+(sx-rect.left),gy=sy;
+ let on=false,ind=null,idx=0,detached=false;
  const others=()=>[...strip.querySelectorAll('.tab')].filter(x=>x!==d);
  const calc=x=>{let n=0;for(const o of others()){const r=o.getBoundingClientRect();if(x>r.left+r.width/2)n++}return n};
- const move=ev=>{
-  if(!on){if(Math.hypot(ev.clientX-sx,ev.clientY-sy)<7)return;on=true;d.classList.add('drag');d.setPointerCapture(e.pointerId);ind=el('div',null,'ins');strip.append(ind)}
+ const off=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up)};
+ function move(ev){
+  if(detached){api.dragMove({x:ev.screenX,y:ev.screenY});return}
+  if(!on){if(Math.hypot(ev.clientX-sx,ev.clientY-sy)<7)return;on=true;d.classList.add('drag');ind=el('div',null,'ins');strip.append(ind);try{document.body.setPointerCapture(e.pointerId)}catch{}}
+  // потянули за пределы строки вкладок: окно отделяется сразу и идёт за курсором
+  if(ev.clientY>62||ev.clientY<-26||ev.clientX<-10||ev.clientX>window.innerWidth+10){
+   detached=true;d.classList.remove('drag');d.style.transform='';d.style.display='none';if(ind)ind.remove();
+   api.dragStart({id:t.id,x:ev.screenX,y:ev.screenY,gx,gy});return}
   d.style.transform='translate('+(ev.clientX-sx)+'px,'+Math.max(-6,Math.min(ev.clientY-sy,70))+'px)';
   idx=calc(ev.clientX);const L=others(),sr=strip.getBoundingClientRect();
   const left=idx<L.length?L[idx].getBoundingClientRect().left:(L.length?L[L.length-1].getBoundingClientRect().right:sr.left);
-  ind.style.left=(left-sr.left+strip.scrollLeft-1)+'px'};
- const up=ev=>{d.removeEventListener('pointermove',move);d.removeEventListener('pointerup',up);d.removeEventListener('pointercancel',up);
-  if(!on)return;try{d.releasePointerCapture(e.pointerId)}catch{}
-  d.classList.remove('drag');d.style.transform='';if(ind)ind.remove();
-  const out=ev.clientY>74||ev.clientY<-20||ev.clientX<0||ev.clientX>window.innerWidth;   // утащили за пределы строки вкладок: отделяем в новое окно
-  if(out&&S.tabs.length>1)api.detachTab({id:t.id,x:ev.screenX,y:ev.screenY});
-  else{const cur=S.tabs.findIndex(x=>x.id===t.id);if(idx!==cur)api.moveTab({id:t.id,to:idx})}
-  suppress=true;setTimeout(()=>{suppress=false},0)};
- d.addEventListener('pointermove',move);d.addEventListener('pointerup',up);d.addEventListener('pointercancel',up);
+  ind.style.left=(left-sr.left+strip.scrollLeft-1)+'px'}
+ function up(ev){
+  off();try{document.body.releasePointerCapture(e.pointerId)}catch{}
+  if(detached){api.dragEnd({x:ev.screenX,y:ev.screenY});d.style.display='';suppress=true;setTimeout(()=>{suppress=false},0);return}
+  if(!on)return;d.classList.remove('drag');d.style.transform='';if(ind)ind.remove();
+  const cur=S.tabs.findIndex(x=>x.id===t.id);if(idx!==cur)api.moveTab({id:t.id,to:idx});
+  suppress=true;setTimeout(()=>{suppress=false},0)}
+ window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
 }
 function tab(t,w){const cmp=w&&w<110;
  const d=el('div',null,'tab'+(t.id===S.active?' act':'')+(cmp?' cmp':'')+(seen.has(t.id)?'':' new'));d.style.setProperty('--c',t.color);d.title=t.title;
@@ -56,6 +62,7 @@ function openFind(){finding=true;$('aw').hidden=true;$('findbox').hidden=false;$
 function closeFind(){finding=false;$('findbox').hidden=true;$('aw').hidden=false;$('fc').textContent='';api.stopFind()}
 api.onTabs(s=>{if(finding&&s.active!==lastA)closeFind();lastA=s.active;S=s;render()});
 api.onBmState(s=>{BM=s;render()});
+api.onDropHint(on=>{$('top').classList.toggle('drop',on);$('side').classList.toggle('drop',on)});
 api.onDlSummary(s=>{const b=$('dl');b.classList.toggle('act',s.active>0);$('dlb').style.transform='scaleX('+(s.active?Math.max(s.percent,4)/100:0)+')';b.title=s.active?'Загрузки: '+s.active+' ('+s.percent+'%)':'Загрузки (Ctrl+J)'});
 api.onFocusAddr(()=>{const a=$('addr');a.focus();a.select()});
 api.onShowFind(openFind);api.onFindResult(r=>{$('fc').textContent=r.total?r.n+'/'+r.total:'0'});

@@ -30,6 +30,23 @@ jobs:
             cp sb/sing-box-${SINGBOX_VERSION}-windows-amd64/* resources/
             sha256sum sb.zip resources/sing-box.exe
           } 2>&1 | tee logs/1-vpn-tunnel.log
+      - name: Ядро AmneziaWG (sing-box-lx)
+        id: lx
+        env:
+          GH_TOKEN: ${{ github.token }}
+          LX_TAG: v1.13.13-lx.15
+        run: |
+          {
+            mkdir -p lx
+            gh release download "$LX_TAG" -R Leadaxe/sing-box-lx -p '*windows-amd64*.zip' -p 'SHA256SUMS' -D lx
+            ls -la lx
+            f=$(ls lx/*windows-amd64*.zip | head -1)
+            n=$(basename "$f")
+            if [ -f lx/SHA256SUMS ] && grep -q "$n" lx/SHA256SUMS; then (cd lx && grep "$n" SHA256SUMS | sha256sum -c -); else echo "Контрольная сумма для $n не найдена в SHA256SUMS (проверка пропущена)"; fi
+            7z x "$f" -olx/ex -y
+            cp "$(find lx/ex -name 'sing-box.exe' | head -1)" resources/sing-box-lx.exe
+            sha256sum resources/sing-box-lx.exe
+          } 2>&1 | tee logs/1b-lx-core.log
       - name: Движок
         id: engine
         run: node scripts/fetch-engine.mjs 2>&1 | tee logs/2-engine.log
@@ -50,6 +67,7 @@ jobs:
           {
             echo "## Сборка успешна. Установщик лежит в разделе Releases справа на главной странице репозитория (и внизу этой страницы в Artifacts)."
             echo "SHA256 sing-box.exe (для проверки на VirusTotal): $(sha256sum resources/sing-box.exe | cut -d' ' -f1)"
+            echo "SHA256 sing-box-lx.exe: $(sha256sum resources/sing-box-lx.exe | cut -d' ' -f1)"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Отчёт об ошибке
         if: failure()
@@ -58,11 +76,13 @@ jobs:
           O2: ${{ steps.engine.outcome }}
           O3: ${{ steps.npm.outcome }}
           O4: ${{ steps.dist.outcome }}
+          O5: ${{ steps.lx.outcome }}
         run: |
           show() { if [ "$1" = failure ]; then echo "### $2"; echo '```'; tail -n 25 "$3"; echo '```'; fi; }
           {
             echo "## Сборка упала"
             show "$O1" "Ядро подключений" logs/1-vpn-tunnel.log
+            show "$O5" "Ядро AmneziaWG" logs/1b-lx-core.log
             show "$O2" "Движок" logs/2-engine.log
             show "$O3" "Зависимости" logs/3-npm.log
             show "$O4" "Установщик" logs/4-installer.log

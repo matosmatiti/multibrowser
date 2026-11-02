@@ -28,6 +28,9 @@ async function editProfile(id){const d=await api.getProfile(id);if(!d)return;eid
  $('eac').checked=!!(d.autoclick&&d.autoclick.on);$('eacr').value=(d.autoclick&&d.autoclick.rules)||'';
  const all=await api.scList(),L=$('esl');L.replaceChildren();if(!all.length)L.append(el('span','Своих скриптов пока нет.','m'));
  for(const s of all){const lb=el('label'),cb=el('input');cb.type='checkbox';cb.value=s.id;cb.checked=(d.scripts||[]).includes(s.id);lb.append(cb,s.name);L.append(lb)}
+ const pr=await api.presetList(),PL=$('epr');PL.replaceChildren();
+ for(const x of pr){const lb=el('label'),cb=el('input');cb.type='checkbox';cb.value=x.id;cb.checked=(d.presets||[]).includes(x.id);lb.append(cb,x.name);PL.append(lb)}
+ $('ent').checked=d.notify!==false;
  $('edit').hidden=false;$('form').hidden=true;$('imp').hidden=true}
 function showConn(){const m=$('ecm').value;$('epx').hidden=m!=='proxy';$('evp').hidden=m!=='vpn'}
 $('ecm').onchange=showConn;
@@ -37,7 +40,7 @@ $('ereset').onclick=()=>{$('ed').value=''};
 $('ecancel').onclick=()=>{$('edit').hidden=true};
 $('esave').onclick=async()=>{const r=await api.updateProfile({id:eid,name:$('en').value,downloadDir:$('ed').value,
  conn:{mode:$('ecm').value,type:$('ect').value,host:$('ech').value,port:$('ecp').value,user:$('ecu').value,pass:$('ecw').value,confText:ecConf},
- autoclick:{on:$('eac').checked,rules:$('eacr').value},scripts:[...$('esl').querySelectorAll('input:checked')].map(x=>x.value)});
+ autoclick:{on:$('eac').checked,rules:$('eacr').value},presets:[...$('epr').querySelectorAll('input:checked')].map(x=>x.value),notify:$('ent').checked,scripts:[...$('esl').querySelectorAll('input:checked')].map(x=>x.value)});
  if(r&&r.error){await api.alert(r.error);return}$('edit').hidden=true;draw();if(r&&r.note)await api.alert(r.note)};
 $('esm').onclick=()=>api.openScripts();
 $('bulk').onclick=()=>{$('imp').hidden=!$('imp').hidden;$('form').hidden=true;$('edit').hidden=true;$('impm').textContent=''};
@@ -54,3 +57,5 @@ async function runCheck(p){const box=$('chk');box.hidden=false;$('cgeo').hidden=
  if(r.tz){$('cgeo').hidden=false;$('cgeo').textContent='Применить часовой пояс и язык ('+r.tz+', '+r.lang+')'}}
 $('cgeo').onclick=async()=>{await api.applyGeo(cres);$('cgeo').disabled=true;$('cgeo').textContent='Применено (для новых вкладок и запусков)';draw()};
 $('cclose').onclick=()=>{$('chk').hidden=true};
+
+$('erp').onclick=async()=>{await api.resetPerms(eid);await api.alert('Запомненные разрешения сайтов сброшены.')};

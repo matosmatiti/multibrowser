@@ -31,7 +31,7 @@ body.side #bar{left:240px;top:0;padding-right:150px;-webkit-app-region:drag}
 .tab.new{animation:tin .22s ease-out}@keyframes tin{from{opacity:0;transform:translateY(6px) scale(.97)}to{opacity:1;transform:none}}
 .dot{flex:none;width:18px;height:18px;border-radius:5px;background:var(--c);color:#0b0f17;font-weight:700;font-size:11px;display:flex;align-items:center;justify-content:center}
 .ttl{flex:1;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
-.x{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;opacity:0;flex:none}.x svg{width:13px;height:13px}
+.x{width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;opacity:0;flex:none;margin-left:auto}.x svg{width:16px;height:16px;display:block}
 .tab:hover .x,.tab.act .x{opacity:.75}.x:hover{background:var(--b);opacity:1}
 body.side .tab{width:100%;max-width:none;flex:none;height:30px;margin:1px 0;border-radius:8px}
 body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto;border-radius:0 3px 3px 0}
@@ -55,9 +55,10 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 .tab.drag{z-index:5;opacity:.93;box-shadow:0 8px 20px rgba(0,0,0,.4);transition:none;cursor:grabbing;background:var(--bg);color:var(--t)}
 .ins{position:absolute;top:8px;bottom:2px;width:2px;border-radius:1px;background:var(--a);pointer-events:none}
 #shield.off svg{opacity:.4}#shc{position:absolute;right:0;bottom:1px;font-size:9px;font-style:normal;font-weight:700;background:var(--a);color:#0b1220;border-radius:6px;padding:0 3px;line-height:12px}#shc:empty{display:none}
+#top.drop{box-shadow:inset 0 -3px 0 var(--a)}#side.drop{box-shadow:inset -3px 0 0 var(--a)}
 </style></head><body>
 <div id="top"><div id="tabs"></div><button id="plus" class="ib" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><div id="grab"></div></div>
-<div id="side"><div id="brand">MultiBrowser</div><div id="groups"></div></div>
+<div id="side"><div id="brand"></div><div id="groups"></div></div>
 <div id="bar">
 <button id="back" class="ib" title="Назад (Alt+←)" aria-label="Назад"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
 <button id="fwd" class="ib" title="Вперёд (Alt+→)" aria-label="Вперёд"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6"/></svg></button>

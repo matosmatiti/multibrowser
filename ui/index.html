@@ -19,7 +19,7 @@ button.p:hover:not(:disabled){background:var(--a);filter:brightness(1.12)}
 button:active:not(:disabled){transform:scale(.95);filter:brightness(.9)}
 button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a);outline-offset:1px}
 [hidden]{display:none!important}
-.full{flex:1 1 100%}textarea{width:100%;box-sizing:border-box;font:12px/1.45 Consolas,"Cascadia Mono",monospace;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:6px;padding:8px}#esl label{display:inline-flex;gap:6px;align-items:center;margin-right:16px}
+.full{flex:1 1 100%}textarea{width:100%;box-sizing:border-box;font:12px/1.45 Consolas,"Cascadia Mono",monospace;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:6px;padding:8px}#esl label{display:inline-flex;gap:6px;align-items:center;margin-right:16px}#epr label{display:flex;gap:8px;align-items:center;margin:4px 0}
 select{appearance:none;-webkit-appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b93a5' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer;transition:background-color .15s,border-color .15s,box-shadow .15s,transform .06s}
 select:hover{background-color:var(--h);border-color:var(--a)}select:focus{border-color:var(--a);box-shadow:0 0 0 3px color-mix(in srgb,var(--a) 22%,transparent)}select:active{transform:scale(.98)}
 input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover,input[type=search]:hover,input[type=password]:hover,textarea:hover{border-color:var(--a)}
@@ -40,7 +40,11 @@ input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover
 <span id="epx" hidden><select id="ect" aria-label="Тип прокси"><option>socks5</option><option>http</option></select> <input id="ech" placeholder="host" size="14"> <input id="ecp" placeholder="порт" size="5"> <input id="ecu" placeholder="логин" size="14"> <input id="ecw" type="password" placeholder="пароль" size="22"></span>
 <span id="evp" hidden><button id="ecpick">Выбрать .conf</button> <span id="ecf" class="m"></span></span>
 <div class="full m">Подключение применяется к новым вкладкам и запускам; уже открытые вкладки перезапусти.</div>
+<div class="full"><b>Сайты и разрешения</b></div>
+<label class="full"><input type="checkbox" id="ent"> Разрешать сайтам показывать уведомления</label>
+<div class="full"><button id="erp">Сбросить запомненные разрешения сайтов</button></div>
 <div class="full"><b>Скрипты</b></div>
+<div class="full m">Готовые скрипты (включаются галочкой):</div><div id="epr" class="full"></div>
 <label class="full"><input type="checkbox" id="eac"> Автонажатие кнопок на сайтах</label>
 <textarea id="eacr" class="full" rows="3" spellcheck="false" placeholder="Каждая строка: сайт | текст кнопки или CSS-селектор | задержка, мс&#10;Пример: *.example.com | Продолжить | 500"></textarea>
 <div class="full m">Мои скрипты для этого профиля: <button id="esm">Управление скриптами</button></div><div id="esl" class="full"></div>
