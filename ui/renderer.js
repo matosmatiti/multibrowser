@@ -5,12 +5,13 @@ function show(){const q=$('q').value.trim().toLowerCase(),b=$('rows');b.replaceC
  $('none').textContent=all.length?(list.length?'':'Ничего не найдено.'):'Профилей пока нет. Нажми «+ Новый профиль» и создай первый.';
  for(const p of list){const on=run.includes(p.id),tr=el('tr'),n=el('td'),ic=el('span',p.name[0].toUpperCase(),'ic');ic.style.background=p.color;n.append(ic,p.name);
   tr.append(n,el('td',p.kind,'m'),el('td',on?'● Запущен':'○ Остановлен',on?'on':'m'));
-  const td=el('td'),sh=el('button','Открыть в оболочке','p'),go=el('button',on?'Закрыть':'Усиленный режим'),ck=el('button','Проверить'),st=el('button','Настройки'),rm=el('button','Удалить');
+  const td=el('td'),sh=el('button','Открыть в оболочке','p'),go=el('button',on?'Закрыть':'Усиленный режим'),ck=el('button','Проверить'),st=el('button','Настройки'),rm=el('button','Удалить'),sd=el('button','Скрипты ▾');
+  sd.onclick=e=>{e.stopPropagation();scriptMenu(p,sd)};
   st.onclick=()=>editProfile(p.id);ck.onclick=()=>runCheck(p);
   sh.onclick=()=>api.openInShell(p.id);
   go.onclick=async()=>{if(on)await api.stop(p.id);else{const e=await api.launch(p.id);if(e)await api.alert(e)}draw()};
   rm.onclick=async()=>{if(await api.confirm('Удалить профиль «'+p.name+'»?')){await api.remove(p.id);draw()}};
-  td.append(sh,' ',go,' ',ck,' ',st,' ',rm);tr.append(td);b.append(tr)}}
+  td.append(sh,' ',go,' ',ck,' ',st,' ',rm,' ',sd);tr.append(td);b.append(tr)}}
 async function draw(){const d=await api.list();all=d.profiles;run=d.running;if(!all.length)$('form').hidden=false;show()}
 $('q').oninput=show;$('new').onclick=()=>{$('form').hidden=!$('form').hidden};$('cancel').onclick=()=>{$('form').hidden=true};
 $('mode').onchange=()=>{const m=$('mode').value;$('px').hidden=m!=='proxy';$('pick').hidden=m!=='vpn'};
@@ -28,8 +29,6 @@ async function editProfile(id){const d=await api.getProfile(id);if(!d)return;eid
  $('eac').checked=!!(d.autoclick&&d.autoclick.on);$('eacr').value=(d.autoclick&&d.autoclick.rules)||'';
  const all=await api.scList(),L=$('esl');L.replaceChildren();if(!all.length)L.append(el('span','Своих скриптов пока нет.','m'));
  for(const s of all){const lb=el('label'),cb=el('input');cb.type='checkbox';cb.value=s.id;cb.checked=(d.scripts||[]).includes(s.id);lb.append(cb,s.name);L.append(lb)}
- const pr=await api.presetList(),PL=$('epr');PL.replaceChildren();
- for(const x of pr){const lb=el('label'),cb=el('input');cb.type='checkbox';cb.value=x.id;cb.checked=(d.presets||[]).includes(x.id);lb.append(cb,x.name);PL.append(lb)}
  $('ent').checked=d.notify!==false;
  $('edit').hidden=false;$('form').hidden=true;$('imp').hidden=true}
 function showConn(){const m=$('ecm').value;$('epx').hidden=m!=='proxy';$('evp').hidden=m!=='vpn'}
@@ -40,7 +39,7 @@ $('ereset').onclick=()=>{$('ed').value=''};
 $('ecancel').onclick=()=>{$('edit').hidden=true};
 $('esave').onclick=async()=>{const r=await api.updateProfile({id:eid,name:$('en').value,downloadDir:$('ed').value,
  conn:{mode:$('ecm').value,type:$('ect').value,host:$('ech').value,port:$('ecp').value,user:$('ecu').value,pass:$('ecw').value,confText:ecConf},
- autoclick:{on:$('eac').checked,rules:$('eacr').value},presets:[...$('epr').querySelectorAll('input:checked')].map(x=>x.value),notify:$('ent').checked,scripts:[...$('esl').querySelectorAll('input:checked')].map(x=>x.value)});
+ autoclick:{on:$('eac').checked,rules:$('eacr').value},notify:$('ent').checked,scripts:[...$('esl').querySelectorAll('input:checked')].map(x=>x.value)});
  if(r&&r.error){await api.alert(r.error);return}$('edit').hidden=true;draw();if(r&&r.note)await api.alert(r.note)};
 $('esm').onclick=()=>api.openScripts();
 $('bulk').onclick=()=>{$('imp').hidden=!$('imp').hidden;$('form').hidden=true;$('edit').hidden=true;$('impm').textContent=''};
@@ -59,3 +58,16 @@ $('cgeo').onclick=async()=>{await api.applyGeo(cres);$('cgeo').disabled=true;$('
 $('cclose').onclick=()=>{$('chk').hidden=true};
 
 $('erp').onclick=async()=>{await api.resetPerms(eid);await api.alert('Запомненные разрешения сайтов сброшены.')};
+
+let SM=null;
+async function scriptMenu(p,btn){
+ if(SM){const same=SM.dataset.pid===p.id;SM.remove();SM=null;if(same)return}
+ const lib=await api.scList(),m=el('div');m.id='smenu';m.dataset.pid=p.id;m.append(el('div','Скрипты профиля «'+p.name+'»','smh'));
+ const note=el('div','','smn');
+ for(const s of lib){const lb=el('label'),cb=el('input'),tx=el('span');cb.type='checkbox';cb.checked=(p.scripts||[]).includes(s.id);
+  tx.append(el('b',s.name),el('small',s.desc||''));
+  cb.onchange=async()=>{await api.scToggle({sid:s.id,pid:p.id,on:cb.checked});p.scripts=cb.checked?[...(p.scripts||[]),s.id]:(p.scripts||[]).filter(x=>x!==s.id);note.textContent='Страницы профиля обновлены'};
+  lb.append(cb,tx);m.append(lb)}
+ m.append(note);const r=btn.getBoundingClientRect();m.style.top=Math.max(8,Math.min(r.bottom+4,innerHeight-400))+'px';m.style.left=Math.max(8,Math.min(r.right-340,innerWidth-348))+'px';
+ document.body.append(m);SM=m}
+document.addEventListener('mousedown',e=>{if(SM&&!SM.contains(e.target)&&!(e.target.closest&&e.target.closest('button'))){SM.remove();SM=null}});

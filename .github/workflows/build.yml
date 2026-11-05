@@ -52,7 +52,7 @@ jobs:
         run: node scripts/fetch-engine.mjs 2>&1 | tee logs/2-engine.log
       - name: Установка зависимостей
         id: npm
-        run: npm install 2>&1 | tee logs/3-npm.log
+        run: npm install --ignore-scripts 2>&1 | tee logs/3-npm.log
       - name: Версия
         run: npm version "0.2.${{ github.run_number }}" --no-git-tag-version
       - name: Сборка и публикация в Releases

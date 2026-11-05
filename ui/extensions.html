@@ -1,0 +1,26 @@
+<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:">
+<title>Расширения</title>
+<style>
+:root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--g:#1a8f5a;--r:#d64545;--h:#e4e7ef}
+@media(prefers-color-scheme:dark){:root{--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--g:#3ecf8e;--r:#ff6b6b;--h:#222836}}
+body{margin:0;font:13px/1.45 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--t)}
+main{max-width:860px;margin:0 auto;padding:22px 24px}h1{font-size:18px;margin:0 0 6px}.m{color:var(--m)}
+.add{display:flex;gap:8px;margin:16px 0 6px}.add input{flex:1}
+input,button{font:inherit;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:6px;padding:7px 11px;box-sizing:border-box}
+button.p{background:var(--a);border-color:var(--a);color:#0b1220;font-weight:600}
+button{transition:background .12s,transform .06s,filter .12s;cursor:pointer}button:hover{background:var(--h)}button.p:hover{background:var(--a);filter:brightness(1.12)}button:active{transform:scale(.96)}
+button:focus-visible,input:focus-visible{outline:2px solid var(--a);outline-offset:1px}input:hover{border-color:var(--a)}
+.ex{border:1px solid var(--b);border-radius:10px;padding:12px 14px;margin:10px 0;background:var(--p)}.eh{display:flex;justify-content:space-between;gap:10px;align-items:center}
+.nm{font-weight:600}.badge{font-size:11px;border:1px solid var(--b);border-radius:9px;padding:0 8px;color:var(--m);margin-left:8px}
+.pr{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:10px}.pr label{display:flex;gap:7px;align-items:center;cursor:pointer}
+input[type=checkbox]{accent-color:var(--a);width:16px;height:16px}#msg{min-height:18px;margin:6px 0;color:var(--g)}#msg.err{color:var(--r)}
+.note{border-left:3px solid var(--a);padding:6px 12px;margin:12px 0;background:var(--p);border-radius:0 8px 8px 0}[hidden]{display:none!important}
+</style></head><body><main>
+<h1>Расширения</h1>
+<div class="m">Вставь ссылку на расширение из Chrome Web Store или его идентификатор: программа скачает его и положит в локальную папку, дальше включай по профилям.</div>
+<div class="add"><input id="src" placeholder="https://chromewebstore.google.com/detail/…/идентификатор" aria-label="Ссылка или идентификатор расширения"><button class="p" id="inst">Установить</button></div>
+<div id="msg"></div>
+<div class="note">Расширения работают частично: у программы нет кнопок расширений на панели и их всплывающих окон, а часть расширений (особенно Manifest V3) может не запуститься. Лучше всего подходят расширения, которые работают на самих страницах (тёмная тема, переводчики, блокировщики, менеджеры закладок). Расширения применяются во вкладках оболочки, не в усиленном режиме.</div>
+<div id="list"></div><div id="none" class="m" hidden>Расширений пока нет.</div>
+</main><script src="extensions.js"></script></body></html>

@@ -1,5 +1,5 @@
 // MultiBrowser: своя оболочка (вкладки разных аккаунтов в одном окне) + усиленный режим (движок fingerprint-chromium отдельным окном)
-const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen,clipboard}=require('electron');
+const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen,clipboard,webContents}=require('electron');
 const path=require('path'),fs=require('fs'),net=require('net'),crypto=require('crypto');
 const {spawn,spawnSync}=require('child_process');
 const {autoUpdater}=require('electron-updater');
@@ -7,7 +7,8 @@ const RES=app.isPackaged?process.resourcesPath:path.join(__dirname,'resources');
 const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json');
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
 try{let sd='force';try{sd=JSON.parse(fs.readFileSync(SETF(),'utf8')).siteDark||'force'}catch{}if(sd==='force')app.commandLine.appendSwitch('enable-features','WebContentsForceDark')}catch{}   // сайты по умолчанию в тёмной теме
-const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',ver:2};
+try{app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion,IntensiveWakeUpThrottling');['disable-renderer-backgrounding','disable-background-timer-throttling','disable-backgrounding-occluded-windows'].forEach(x=>app.commandLine.appendSwitch(x))}catch{}   // страницы не уходят в экономный режим
+const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,ver:2};
 const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q='};
 let cfg={...DEF},manual=false;
 const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}
@@ -16,10 +17,10 @@ const saveCfg=()=>{try{fs.writeFileSync(SETF(),JSON.stringify(cfg,null,1))}catch
 const applyTheme=()=>{nativeTheme.themeSource=['light','dark'].includes(cfg.theme)?cfg.theme:'system'};
 const homeUrl=()=>cfg.home==='blank'?'about:blank':(cfg.home==='custom'&&/^https?:\/\//i.test(cfg.customHome)?cfg.customHome:'https://www.google.com/');
 const searchUrl=()=>ENG[cfg.search]||ENG.google;
-const PAGES={scripts:{file:'ui/scripts.html',pid:'_sc',title:'Скрипты',icon:'⚡'},bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
+const PAGES={extensions:{file:'ui/extensions.html',pid:'_ext',title:'Расширения',icon:'⧉'},scripts:{file:'ui/scripts.html',pid:'_sc',title:'Скрипты',icon:'⚡'},bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map();
 const hooked=new Set(),live=new Map(),closedTabs=[];
-let scripts=[],dlRect=null,toastV=null,toastOpen=false,toastId=null,toastT=null,toastHover=false,flyV=null,menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
+let menuW=270,suggestSel=-1,scripts=[],dlRect=null,toastV=null,toastOpen=false,toastId=null,toastT=null,toastHover=false,flyV=null,menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
 const LOG=()=>path.join(app.getPath('userData'),'log.txt');
 const log=m=>{try{fs.appendFileSync(LOG(),new Date().toISOString()+' '+m+'\n')}catch{}};
 let win=null,tabs=[],active=null,mode='top',curW=null,overlayW=null,nextId=1,restoring=true,quitting=false,saveT=null,started=false;
@@ -30,6 +31,7 @@ function setActive(id){active=id;if(curW)curW.active=id}
 function setMode(m){mode=m;if(curW)curW.mode=m}
 function ownerCtx(wc){if(!wc)return;for(const W of windows){if(W.dead)continue;if(W.win.webContents===wc||W.tabs.some(t=>t.view.webContents===wc)){useW(W);return}}if(overlayW)useW(overlayW)}
 const H=(ch,fn)=>ipcMain.handle(ch,(e,...a)=>{ownerCtx(e&&e.sender);return fn(e,...a)});
+function dropOverlay(v){if(!v)return;try{v.setVisible(false)}catch{}try{if(v.__w&&!v.__w.isDestroyed())v.__w.contentView.removeChildView(v)}catch{}try{v.setBounds({x:0,y:0,width:0,height:0})}catch{}v.__w=null}
 function attach(v){if(v.__w&&v.__w!==win&&!v.__w.isDestroyed()){try{v.__w.contentView.removeChildView(v)}catch{}}win.contentView.addChildView(v);v.__w=win;overlayW=curW}
 const ICON=path.join(__dirname,'ui','icon.png');
 const load=()=>{try{return JSON.parse(fs.readFileSync(FILE(),'utf8'))}catch{return[]}};
@@ -48,7 +50,7 @@ function cleanup(j){kill(j.wp);if(j.conf)try{fs.rmSync(j.conf,{force:true})}catc
 const PAL=['#ff7a59','#4c8dff','#3ecf8e','#b58cff','#ffc247','#ff6b9a','#2ec4c4','#9aa5b8'];
 const colorOf=id=>PAL[parseInt(id.replace(/-/g,'').slice(0,6),16)%PAL.length];
 const pushMgr=()=>{saveSoon();for(const W of windows)for(const t of W.tabs)if(t.kind==='manager'&&!t.view.webContents.isDestroyed())t.view.webContents.send('state',[...running.keys()])};
-const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),kind:(p.vpn?'VPN-конфиг'+(p.vpnNote?' (AWG→WG)':''):p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси')+(p.tz?' · '+p.tz:'')}));
+const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),scripts:enabledIds(p),kind:(p.vpn?'VPN-конфиг'+(p.vpnNote?' (AWG→WG)':''):p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси')+(p.tz?' · '+p.tz:'')}));
 
 // ---------- подключения: прокси с логином и VPN-конфиги (WireGuard) через sing-box ----------
 const needsTunnel=p=>!!(p.vpn||(p.proxy&&p.proxy.user));
@@ -116,20 +118,24 @@ function fadeTo(v,ms){
   w.setOpacity(from+(v-from)*Math.min(i/n,1));if(i>=n){clearInterval(id);fading=false}},16);
 }
 const langsOf=l=>l?`${l},${l.split('-')[0]};q=0.9`:'';
-function applyGeo(wc,p){   // часовой пояс и язык профиля (подмена на уровне страницы)
- if(!p.tz&&!p.lang)return;
+const CHR=(process.versions&&process.versions.chrome)||'130.0.0.0',CMAJ=CHR.split('.')[0];
+const UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/'+CMAJ+'.0.0.0 Safari/537.36';
+const pageBg=()=>(cfg.siteDark==='force'&&nativeTheme.shouldUseDarkColors)?'#12151c':'#ffffff';
+function applyGeo(wc,p){   // обычный user-agent и client hints Chrome (без «Electron»), часовой пояс и язык профиля
  try{wc.debugger.attach('1.3')}catch{}
- try{
-  if(p.tz)wc.debugger.sendCommand('Emulation.setTimezoneOverride',{timezoneId:p.tz}).catch(()=>{});
-  if(p.lang){wc.debugger.sendCommand('Emulation.setLocaleOverride',{locale:p.lang}).catch(()=>{});
-   wc.debugger.sendCommand('Emulation.setUserAgentOverride',{userAgent:wc.getUserAgent(),acceptLanguage:langsOf(p.lang)}).catch(()=>{})}
- }catch(e){log('geo: '+e.message)}
+ const send=(m,pr)=>{try{return wc.debugger.sendCommand(m,pr).catch(()=>{})}catch{}};
+ const meta={brands:[{brand:'Chromium',version:CMAJ},{brand:'Google Chrome',version:CMAJ},{brand:'Not_A Brand',version:'24'}],fullVersionList:[{brand:'Chromium',version:CHR},{brand:'Google Chrome',version:CHR},{brand:'Not_A Brand',version:'24.0.0.0'}],platform:'Windows',platformVersion:'10.0.0',architecture:'x86',model:'',mobile:false,bitness:'64',wow64:false};
+ send('Emulation.setUserAgentOverride',{userAgent:UA,platform:'Win32',...(p.lang?{acceptLanguage:langsOf(p.lang)}:{}),userAgentMetadata:meta});
+ if(p.tz)send('Emulation.setTimezoneOverride',{timezoneId:p.tz});
+ if(p.lang)send('Emulation.setLocaleOverride',{locale:p.lang});
+ send('Page.enable');send('Page.addScriptToEvaluateOnNewDocument',{source:'if(!window.chrome)window.chrome={runtime:{}};'});
 }
 const topH=()=>(mode==='side'?42:82)+(cfg.bmBar?30:0);
 function layout(){
  if(!win||win.isDestroyed())return;const b=win.getContentBounds(),W=b.width,H=b.height;
  const x=mode==='side'?240:0,y=topH();
- for(const t of tabs){const on=t.id===active&&t.ready!==false;t.view.setVisible(on);if(on)t.view.setBounds({x,y,width:Math.max(W-x,1),height:Math.max(H-y,1)})}
+ for(const t of tabs){if(t.id===active&&t.ready!==false){t.view.setBounds(t.fs?{x:0,y:0,width:W,height:H}:{x,y,width:Math.max(W-x,1),height:Math.max(H-y,1)});t.view.setVisible(true)}}
+ for(const t of tabs){if(!(t.id===active&&t.ready!==false))t.view.setVisible(false)}
  if(panel&&panelOpen)panel.setBounds(panelBounds());
 }
 function pushTabs(){
@@ -139,37 +145,47 @@ function pushTabs(){
  if(pg)lastPid=t.pid;
  const pgOf=id=>Object.values(PAGES).find(x=>x.pid===id),nm=id=>pgOf(id)?pgOf(id).title:(all.find(p=>p.id===id)||{name:'?'}).name;
  const col=id=>id[0]==='_'?'#8b93a5':colorOf(id);
- win.webContents.send('tabs',{mode,active,blocked:(t&&t.blocked)||0,adOn:!!cfg.adblock,loading:!!(t&&!t.kind&&t.loading),waiting:!!(t&&t.ready===false),starred:!!(pg&&bookmarks.some(b=>b.url===t.url)),url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
+ win.webContents.send('tabs',{mode,active,incognito:!!(curW&&curW.incognito),blocked:(t&&t.blocked)||0,adOn:!!cfg.adblock,loading:!!(t&&!t.kind&&t.loading),waiting:!!(t&&t.ready===false),starred:!!(pg&&bookmarks.some(b=>b.url===t.url)),url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
   profiles:[...new Set(tabs.map(x=>x.pid))].map(id=>({id,name:nm(id),color:col(id),icon:pgOf(id)?pgOf(id).icon:null})),
-  tabs:tabs.map(x=>({id:x.id,pid:x.pid,title:x.kind?PAGES[x.kind].title:(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind?PAGES[x.kind].icon:nm(x.pid)[0].toUpperCase()}))});
+  tabs:tabs.map(x=>({id:x.id,pid:x.pid,audible:!!x.audible,muted:!!x.muted,pinned:!!x.pinned,title:x.kind?PAGES[x.kind].title:(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind?PAGES[x.kind].icon:nm(x.pid)[0].toUpperCase()}))});
 }
-async function newTab(pid,url,bg){
+async function newTab(pid,url,bg,afterId){
  const p=prof(pid);if(!p)return null;
  const W=curW;
- const ses=session.fromPartition('persist:p-'+pid);hookDownloads(ses,pid);adblockSession(ses,pid);permSession(ses,pid);   // у каждого профиля свои куки, кэш и хранилище
+ const part=W.incognito?'inc-'+W.uid+'-'+pid:'persist:p-'+pid,ses=session.fromPartition(part);hookDownloads(ses,pid,part);adblockSession(ses,pid,part);permSession(ses,pid,part);
+ try{ses.setUserAgent(UA)}catch{}
+ try{const sl=(ses.availableSpellCheckerLanguages||[]).filter(l=>/^(ru|en-US)$/.test(l));if(sl.length)ses.setSpellCheckerLanguages(sl)}catch{}   // у каждого профиля свои куки, кэш и хранилище
  let vpn=false;
  try{
   if(needsTunnel(p)){const u=await tunnelFor(p);vpn=true;await ses.setProxy({proxyRules:u})}
   else if(p.proxy)await ses.setProxy({proxyRules:`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`});
   else await ses.setProxy({mode:'direct'});
  }catch(e){appDialog({title:'MultiBrowser',type:'error',message:e.message});return null}
+ try{if((p.exts||[]).length)await loadExts(ses,p,part)}catch(e){log('ext: '+e.message)}
  useW(W);
  const v=new WebContentsView({webPreferences:{session:ses,contextIsolation:true,sandbox:true}});
- const t={id:nextId++,pid,view:v,title:'',url:url||homeUrl(),vpn,ready:false,loading:true,W,blocked:0};tabs.push(t);
+ const t={id:nextId++,pid,view:v,title:'',url:url||homeUrl(),vpn,ready:false,loading:true,W,blocked:0};
+ const ai=afterId?tabs.findIndex(x=>x.id===(W.anchor&&W.anchor.op===afterId?W.anchor.last:afterId)):-1;
+ if(ai>=0){tabs.splice(ai+1,0,t);W.anchor={op:afterId,last:t.id}}else tabs.push(t);
  const wc=v.webContents;
+ v.setBackgroundColor(pageBg());try{wc.setBackgroundThrottling(false)}catch{}
  const on=(ev,fn)=>wc.on(ev,(...a)=>{if(useW(t.W))fn(...a)}),once=(ev,fn)=>wc.once(ev,(...a)=>{if(useW(t.W))fn(...a)});
- on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false}});
+ on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;userDocStart(t,u);adCosmetics(t,u)}});
  on('context-menu',(e,pr)=>ctxMenu(t,pr));
+ const au=()=>{const a=wc.isCurrentlyAudible(),m=wc.isAudioMuted();if(t.audible!==a||t.muted!==m){t.audible=a;t.muted=m;if(useW(t.W))pushTabs()}};
+ on('audio-state-changed',au);on('media-started-playing',au);on('media-paused',au);
+ on('enter-html-full-screen',()=>{t.fs=true;win.setFullScreen(true);layout()});on('leave-html-full-screen',()=>{t.fs=false;win.setFullScreen(false);layout()});
+ on('zoom-changed',(e,dir)=>zoom(dir==='in'?1:-1));
  wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
  const mkReady=()=>{if(!t.ready&&useW(t.W)){t.ready=true;layout();pushTabs()}};   // страница показывается, когда готова: без белой вспышки
  once('dom-ready',()=>setTimeout(mkReady,60));setTimeout(mkReady,3500);
  on('did-start-loading',()=>{t.loading=true;pushTabs()});on('did-stop-loading',()=>{t.loading=false;mkReady();pushTabs()});
  applyGeo(wc,p);
  on('dom-ready',()=>runScripts(wc,pid,'dom-ready'));on('did-finish-load',()=>runScripts(wc,pid,'load'));
- wc.setWindowOpenHandler(({url:u})=>{useW(t.W);newTab(pid,u);return{action:'deny'}});
+ wc.setWindowOpenHandler(({url:u,disposition:d})=>{useW(t.W);newTab(pid,u,d==='background-tab',t.id);return{action:'deny'}});
  on('page-title-updated',(e,s)=>{t.title=s;if(t.h)t.h.title=s;saveHistSoon();pushTabs()});
- on('did-navigate',(e,u)=>{t.url=u;t.h=addHistory(pid,u);pushTabs()});
- on('did-navigate-in-page',(e,u,main)=>{t.url=u;if(main)t.h=addHistory(pid,u);pushTabs()});
+ on('did-navigate',(e,u)=>{t.url=u;t.h=W.incognito?null:addHistory(pid,u);pushTabs()});
+ on('did-navigate-in-page',(e,u,main)=>{t.url=u;if(main)t.h=W.incognito?null:addHistory(pid,u);pushTabs()});
  on('before-input-event',(e,i)=>{if(hotkey(i,wc))e.preventDefault()});
  on('found-in-page',(e,r)=>{if(t.id===active&&win&&!win.webContents.isDestroyed())win.webContents.send('find-result',{n:r.activeMatchOrdinal,total:r.matches})});
  win.contentView.addChildView(v);if(!bg||active===null)setActive(t.id);wc.loadURL(t.url);layout();pushTabs();return t;
@@ -202,9 +218,9 @@ async function launch(id){
 const SESS=()=>path.join(DATA(),'session.json');
 function saveSession(){
  if(restoring||quitting)return;
- const data={enhanced:[...running.keys()],windows:windows.filter(W=>!W.dead).map(W=>({mode:W.mode,active:W.tabs.findIndex(t=>t.id===W.active),
+ const data={enhanced:[...running.keys()],windows:windows.filter(W=>!W.dead&&!W.incognito).map(W=>({mode:W.mode,active:W.tabs.findIndex(t=>t.id===W.active),
   bounds:(()=>{try{return W.win.getBounds()}catch{return null}})(),
-  tabs:W.tabs.map(t=>({pid:t.pid,kind:t.kind||'',url:t.kind?'':(t.view.webContents.getURL()||t.url)}))}))};
+  tabs:W.tabs.map(t=>({pid:t.pid,pinned:!!t.pinned,kind:t.kind||'',url:t.kind?'':(t.view.webContents.getURL()||t.url)}))}))};
  const w0=data.windows[0];if(w0){data.mode=w0.mode;data.active=w0.active;data.tabs=w0.tabs}   // совместимость со старым форматом
  try{fs.writeFileSync(SESS(),JSON.stringify(data))}catch{}
 }
@@ -223,7 +239,7 @@ async function restoreSession(){
    let target=null;
    for(let i=0;i<(w.tabs||[]).length;i++){const x=w.tabs[i];let t=null;
     try{if(x.kind&&PAGES[x.kind])t=openPage(x.kind,true);else if(!x.kind&&ids.has(x.pid))t=await newTab(x.pid,x.url,true)}catch(e){log('restore tab: '+e.message)}
-    useW(W);if(t&&i===w.active)target=t}
+    useW(W);if(t&&x.pinned)t.pinned=true;if(t&&i===w.active)target=t}
    const pick=target||tabs[0];if(pick)setActive(pick.id);
    layout();pushTabs();
   }
@@ -281,8 +297,8 @@ function pushDownloads(){
  if(panel&&panelOpen&&!panel.webContents.isDestroyed())panel.webContents.send('downloads',dlList());
  pushToast();
 }
-function hookDownloads(ses,pid){   // каждый профиль качает в свою папку (если задана), иначе в общую
- if(hooked.has(pid))return;hooked.add(pid);
+function hookDownloads(ses,pid,key){   // каждый профиль качает в свою папку (если задана), иначе в общую
+ key=key||pid;if(hooked.has(key))return;hooked.add(key);
  ses.on('will-download',(e,item,srcWc)=>{
   ownerCtx(srcWc);
   let dir=downloadDirFor(prof(pid));
@@ -320,7 +336,7 @@ function showPanel(){
  attach(panel);panel.setBounds(panelBounds());panel.setVisible(true);panelOpen=true;panelShownAt=Date.now();
  panel.webContents.focus();if(!panel.webContents.isLoading())panel.webContents.send('downloads',dlList());
 }
-function hidePanel(){if(panel)panel.setVisible(false);panelOpen=false}
+function hidePanel(){dropOverlay(panel);panelOpen=false}
 function togglePanel(){if(panelOpen){hidePanel();return}if(Date.now()-lastBlurHide<250)return;showPanel()}
 
 // ---------- закладки и история ----------
@@ -359,28 +375,31 @@ function menuBounds(w,h){const b=win.getContentBounds(),a=menuAnchor||{x:12,y:44
 function showMenu(items,anchor,opts={}){
  hidePanel();hideToast();menuActs=new Map();
  const out=items.map((it,i)=>{const {fn,...r}=it;if(fn){r.id='a'+i;menuActs.set(r.id,fn)}return r});
- menuPayload={items:out,search:!!opts.search};menuAnchor=anchor||cursorAnchor();
+ menuPayload={items:out,search:!!opts.search,placeholder:opts.placeholder||'',suggest:!!opts.suggest};menuW=opts.width||270;menuAnchor=anchor||cursorAnchor();
  if(!menuV){menuV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});menuV.webContents.loadFile('ui/menu.html');
   menuV.webContents.on('blur',()=>{if(menuOpen&&Date.now()-menuShownAt>200){hideMenu();lastMenuBlur=Date.now()}});
   menuV.webContents.on('before-input-event',(e,i)=>{if(i.type==='keyDown'&&i.key==='Escape'){hideMenu();e.preventDefault()}})}
- attach(menuV);menuV.setBounds(menuBounds(270,120));menuV.setVisible(true);menuOpen=true;menuShownAt=Date.now();
- menuV.webContents.focus();if(!menuV.webContents.isLoading())menuV.webContents.send('menu',menuPayload);
+ attach(menuV);menuV.setBounds(menuBounds(menuW,120));menuV.setVisible(true);menuOpen=true;menuShownAt=Date.now();
+ if(!opts.noFocus)menuV.webContents.focus();if(!menuV.webContents.isLoading())menuV.webContents.send('menu',menuPayload);
 }
-function hideMenu(){if(menuV)menuV.setVisible(false);menuOpen=false}
-function profileMenu(anchor,url){
+function hideMenu(){dropOverlay(menuV);menuOpen=false}
+function profileMenu(anchor,url,incog){
  const l=load();
  if(!l.length){showMenu([{label:'Сначала создай профиль',disabled:true},{label:'Открыть «Профили»',fn:()=>openPage('manager')}],anchor);return}
- const mk=(p,fn,tag)=>({label:p.name,color:colorOf(p.id),letter:p.name[0].toUpperCase(),tag,fn});
- const items=[{type:'header',label:url?'Открыть в профиле':'Новая вкладка в профиле'}];
- for(const p of l)items.push(mk(p,()=>newTab(p.id,url)));
- if(!url){items.push({type:'sep'},{type:'header',label:'Усиленный режим (отдельное окно)'});
+ const mk=(p,fn,tag)=>({label:p.name,color:colorOf(p.id),letter:p.name[0].toUpperCase(),tag,fn}),c0=cur();
+ const items=[{type:'header',label:incog?'Окно инкогнито для профиля':(url?'Открыть в профиле':'Новая вкладка в профиле')}];
+ for(const p of l)items.push(mk(p,()=>incog?openIncognito(p.id):newTab(p.id,url,false,c0&&c0.id)));
+ if(!url&&!incog){items.push({type:'sep'},{type:'header',label:'Усиленный режим (отдельное окно)'});
   for(const p of l)items.push(mk(p,()=>launch(p.id).catch(x=>appDialog({title:'MultiBrowser',type:'error',message:x.message})),'усил.'))}
  showMenu(items,anchor,{search:l.length>7});
 }
 function mainMenu(anchor){
  const t=cur();
  showMenu([
-  {label:'Новая вкладка',hint:'Ctrl+T',fn:()=>{if(t&&!t.kind)newTab(t.pid);else profileMenu()}},
+  {label:'Новая вкладка',hint:'Ctrl+T',fn:()=>{if(t&&!t.kind)newTab(t.pid,undefined,false,t.id);else profileMenu()}},
+  {label:'Новое окно',hint:'Ctrl+N',fn:()=>newWindowFlow()},
+  {label:'Новое окно инкогнито',hint:'Ctrl+Shift+N',fn:()=>incognitoFlow()},
+  {label:'Поиск по вкладкам',hint:'Ctrl+Shift+A',fn:()=>tabSearch()},
   {type:'sep'},
   {label:'Закладки',hint:'Ctrl+Shift+O',fn:()=>openPage('bookmarks')},
   {label:'История',hint:'Ctrl+H',fn:()=>openPage('history')},
@@ -388,7 +407,9 @@ function mainMenu(anchor){
   ...(t&&!t.kind?[{label:t.translated?'Показать оригинал':'Перевести страницу',fn:()=>translateToggle(t)}]:[]),
   {type:'sep'},
   {label:'Скрипты',fn:()=>openPage('scripts')},
+  {label:'Расширения',fn:()=>openPage('extensions')},
   {label:'Профили',fn:()=>openPage('manager')},
+  {label:'Очистить данные профиля…',hint:'Ctrl+Shift+Del',fn:()=>clearDataFlow()},
   {label:'Настройки',fn:()=>openPage('settings')},
   {type:'sep'},
   {label:'Панель закладок',hint:'Ctrl+Shift+B',checked:!!cfg.bmBar,fn:()=>{cfg.bmBar=!cfg.bmBar;saveCfg();layout();pushBm()}},
@@ -411,13 +432,13 @@ function hotkey(i,wc){
  if(k==='F12'||(c&&sh&&L==='i')){(w||wc).toggleDevTools();return true}
  if(k==='F11'){win.setFullScreen(!win.isFullScreen());return true}
  if(k==='F5'||(c&&L==='r')){if(w){if(c&&(sh||k==='F5'))w.reloadIgnoringCache();else w.reload()}return true}
- if(c&&L==='t'){if(sh)reopenTab();else if(t&&!t.kind)newTab(t.pid);else profileMenu();return true}
+ if(c&&L==='t'){if(sh)reopenTab();else if(t&&!t.kind)newTab(t.pid,undefined,false,t.id);else profileMenu();return true}
  if(c&&!sh&&(L==='w'||k==='F4')){if(t)closeTab(t.id);return true}
  if(c&&k==='Tab'){cycle(sh?-1:1);return true}
  if(c&&k==='PageDown'){cycle(1);return true}
  if(c&&k==='PageUp'){cycle(-1);return true}
  if(c&&dg&&dg!=='0'){goTab(dg==='9'?tabs[tabs.length-1]:tabs[+dg-1]);return true}
- if((c&&L==='l')||k==='F6'||(al&&L==='d')){win.webContents.focus();win.webContents.send('focus-addr');return true}
+ if((c&&(L==='l'||L==='k'||L==='e'))||k==='F6'||(al&&L==='d')){win.webContents.focus();win.webContents.send('focus-addr');return true}
  if(al&&k==='ArrowLeft'){if(w&&w.navigationHistory.canGoBack())w.navigationHistory.goBack();return true}
  if(al&&k==='ArrowRight'){if(w&&w.navigationHistory.canGoForward())w.navigationHistory.goForward();return true}
  if(al&&k==='Home'){if(w)w.loadURL(homeUrl());return true}
@@ -432,6 +453,15 @@ function hotkey(i,wc){
  if(c&&sh&&L==='o'){openPage('bookmarks');return true}
  if(c&&!sh&&L==='h'){openPage('history');return true}
  if(c&&sh&&L==='b'){cfg.bmBar=!cfg.bmBar;saveCfg();layout();pushBm();return true}
+ if(c&&sh&&L==='n'){incognitoFlow();return true}
+ if(c&&!sh&&L==='n'){newWindowFlow();return true}
+ if(c&&sh&&L==='a'){tabSearch();return true}
+ if(c&&sh&&L==='w'){win.close();return true}
+ if(c&&sh&&L==='m'&&w&&t){w.setAudioMuted(!w.isAudioMuted());t.muted=w.isAudioMuted();pushTabs();return true}
+ if(c&&!sh&&L==='s'&&w){savePage(w);return true}
+ if(c&&sh&&(k==='PageUp'||k==='PageDown')){moveActive(k==='PageUp'?-1:1);return true}
+ if(c&&sh&&(k==='Delete'||k==='Backspace')){clearDataFlow();return true}
+ if(k==='F3'||(c&&L==='g')){win.webContents.send('find-next',!sh);return true}
  return false;
 }
 
@@ -458,7 +488,7 @@ function toastItem(){const d=downloads.find(x=>x.id===toastId);if(!d)return null
 function toastBounds(){const b=win.getContentBounds(),r=(curW&&curW.dlRect)||{right:b.width-130,bottom:topH()-40},w=340,h=108;
  return{x:Math.round(Math.min(Math.max(r.right-w,6),b.width-w-6)),y:Math.round(r.bottom+8),width:w,height:h}}
 function pushToast(){if(toastOpen&&toastV&&!toastV.webContents.isDestroyed())toastV.webContents.send('toast',toastItem())}
-function hideToast(){if(toastV)toastV.setVisible(false);toastOpen=false;clearTimeout(toastT)}
+function hideToast(){dropOverlay(toastV);toastOpen=false;clearTimeout(toastT)}
 function showToast(id,ms){
  if(panelOpen||menuOpen||!win||win.isDestroyed())return;toastId=id;
  if(!toastV){toastV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});toastV.webContents.loadFile('ui/toast.html')}
@@ -478,7 +508,7 @@ function flyDownload(start,done){   // значок летит от места �
    const k=Math.min((Date.now()-t0)/D,1),e=ease(k),u=1-e;
    const x=u*u*start.x+2*u*e*c.x+e*e*end.x,y=u*u*start.y+2*u*e*c.y+e*e*end.y;
    flyV.setBounds({x:Math.round(x-SZ/2),y:Math.round(y-SZ/2),width:SZ,height:SZ});
-   if(k>=1){flyV.setVisible(false);if(!w0.webContents.isDestroyed())w0.webContents.send('dl-hit');done()}else setTimeout(step,4)};
+   if(k>=1){dropOverlay(flyV);if(!w0.webContents.isDestroyed())w0.webContents.send('dl-hit');done()}else setTimeout(step,4)};
   step();
  }catch(e){log('fly: '+e.message);done()}
 }
@@ -496,25 +526,71 @@ function urlMatch(pat,url){
  else r='^https?://'+esc(pat).replace(/^\*\\\./,'(?:.*\\.)?').replace(/\*/g,'.*')+'(?::\\d+)?(?:/.*)?$';
  try{return new RegExp(r).test(url)}catch{return false}
 }
-const PRESETS=[
- {id:'claude-continue',name:'Claude: нажимать «Продолжить», когда кнопка становится активной',rules:'claude.ai | Продолжить | 300\nclaude.ai | Continue | 300'},
- {id:'cookies',name:'Принимать окна cookie («Принять все», «Accept all»)',rules:'* | Принять все | 800\n* | Принять все файлы cookie | 800\n* | Accept all | 800\n* | Accept all cookies | 800'},
- {id:'yt-skip',name:'YouTube: нажимать «Пропустить рекламу»',rules:'youtube.com | .ytp-skip-ad-button | 200\nyoutube.com | .ytp-ad-skip-button-modern | 200\nyoutube.com | .ytp-ad-skip-button | 200'}];
+const AC=(id,name,desc,rules)=>({id,name,desc,type:'autoclick',builtin:true,params:[{key:'rules',label:'Правила: сайт | текст кнопки или CSS-селектор | задержка, мс',type:'text',def:rules}]});
+const BUILTIN=[
+ AC('b-claude-continue','Claude: нажимать «Продолжить»','Нажимает кнопку «Продолжить» на claude.ai, когда она становится активной.','claude.ai | Продолжить | 300\nclaude.ai | Continue | 300'),
+ AC('b-cookies','Принимать окна cookie','Нажимает «Принять все» / «Accept all» в баннерах согласия на cookie.','* | Принять все | 800\n* | Принять все файлы cookie | 800\n* | Accept all | 800\n* | Accept all cookies | 800\n* | Allow all | 800'),
+ AC('b-dismiss','Закрывать предложения подписки и уведомлений','Нажимает «Не сейчас», «Нет, спасибо», «No thanks», «Not now» во всплывающих окнах.','* | Не сейчас | 600\n* | Нет, спасибо | 600\n* | No thanks | 600\n* | Not now | 600\n* | Maybe later | 600'),
+ AC('b-expand','Раскрывать «Читать далее» и «Показать ещё»','Автоматически раскрывает свёрнутые тексты и списки.','* | Читать далее | 500\n* | Показать ещё | 500\n* | Показать больше | 500\n* | Read more | 500\n* | Show more | 500\n* | See more | 500'),
+ AC('b-yt-skip','YouTube: пропуск рекламы','Нажимает «Пропустить рекламу», как только кнопка активна.','youtube.com | .ytp-skip-ad-button | 200\nyoutube.com | .ytp-ad-skip-button-modern | 200\nyoutube.com | .ytp-ad-skip-button | 200'),
+ AC('b-netflix-skip','Netflix: пропуск заставки и следующая серия','Нажимает «Пропустить заставку» и «Следующая серия».','netflix.com | Пропустить заставку | 300\nnetflix.com | Skip Intro | 300\nnetflix.com | Следующая серия | 300\nnetflix.com | Next Episode | 300'),
+ AC('b-twitch-bonus','Twitch: собирать бонусные баллы канала','Нажимает на сундук с бонусом, когда он появляется.','twitch.tv | .claimable-bonus__icon | 500'),
+ {id:'b-autoreload',name:'Автообновление страницы',desc:'Перезагружает страницу через заданное число секунд.',type:'js',builtin:true,match:['*'],runAt:'dom-ready',params:[{key:'seconds',label:'Интервал, секунд',type:'number',def:60}],
+  code:"const s=Math.max(5,Number(MB.params.seconds)||60);MB.log('автообновление через',s,'с');setTimeout(()=>location.reload(),s*1000);"},
+ {id:'b-keepalive',name:'Не давать странице «засыпать»',desc:'Периодически имитирует движение мыши, чтобы сайт не разлогинивал по бездействию.',type:'js',builtin:true,match:['*'],runAt:'dom-ready',params:[{key:'seconds',label:'Интервал, секунд',type:'number',def:45}],
+  code:"setInterval(()=>{document.dispatchEvent(new MouseEvent('mousemove',{bubbles:true,clientX:Math.floor(Math.random()*40),clientY:Math.floor(Math.random()*40)}))},Math.max(5,Number(MB.params.seconds)||45)*1000);"},
+ {id:'b-novideoauto',name:'Отключить автозапуск видео',desc:'Ставит на паузу видео, которые запускаются сами при открытии страницы.',type:'js',builtin:true,match:['*'],runAt:'dom-ready',params:[],
+  code:"const stop=()=>document.querySelectorAll('video,audio').forEach(v=>{try{v.autoplay=false;v.pause()}catch(e){}});stop();let n=0;const iv=setInterval(()=>{stop();if(++n>10)clearInterval(iv)},500);"},
+ {id:'b-yt-speed',name:'YouTube: скорость воспроизведения',desc:'Задаёт скорость видео на YouTube (кроме рекламы).',type:'js',builtin:true,match:['youtube.com'],runAt:'dom-ready',params:[{key:'speed',label:'Скорость (1 = обычная)',type:'number',def:1.5}],
+  code:"const sp=Number(MB.params.speed)||1;setInterval(()=>{const v=document.querySelector('video');if(v&&v.playbackRate!==sp&&!document.querySelector('.ad-showing'))v.playbackRate=sp},700);"},
+ {id:'b-unlock-copy',name:'Разрешить копирование текста',desc:'Снимает запрет выделения и копирования на сайтах, где он включён.',type:'js',builtin:true,match:['*'],runAt:'dom-ready',params:[],
+  code:"const st=document.createElement('style');st.textContent='*{user-select:text!important;-webkit-user-select:text!important}';(document.head||document.documentElement).append(st);for(const ev of ['copy','cut','paste','contextmenu','selectstart','dragstart'])document.addEventListener(ev,e=>e.stopImmediatePropagation(),true);"},
+ {id:'b-autoscroll',name:'Автопрокрутка страницы',desc:'Плавно прокручивает страницу вниз с заданной скоростью.',type:'js',builtin:true,match:['*'],runAt:'dom-ready',params:[{key:'speed',label:'Скорость, пикселей в секунду',type:'number',def:40}],
+  code:"let last=performance.now();const sp=Number(MB.params.speed)||40;const f=t=>{window.scrollBy(0,sp*(t-last)/1000);last=t;requestAnimationFrame(f)};requestAnimationFrame(f);"}
+];
+const allScripts=()=>[...BUILTIN,...scripts.map(x=>({...x,builtin:false,type:x.type==='autoclick'?'autoclick':'js'}))];
+const enabledIds=p=>[...new Set([...(p.scripts||[]),...(p.presets||[]).map(x=>'b-'+x)])];
+function scriptParams(sc,p){
+ const o={};for(const x of sc.params||[])o[x.key]=x.def;const c=(p.scriptCfg||{})[sc.id];if(c)Object.assign(o,c);
+ for(const x of sc.params||[]){if(x.type==='number')o[x.key]=Number(o[x.key])||0;else if(x.type==='bool')o[x.key]=o[x.key]===true||o[x.key]==='true'}
+ return o;
+}
+function runAuto(text,url,run){
+ const rules=[];
+ for(const line of String(text).split(/\r?\n/)){const l=line.trim();if(!l||l[0]==='#')continue;
+  const parts=l.split('|').map(x=>x.trim()),site=parts.length>1?parts[0]:'*',target=parts.length>1?parts[1]:parts[0],delay=parseInt(parts[2])||300;
+  if(target&&urlMatch(site,url))rules.push({target,delay})}
+ if(rules.length)run(prelude()+';MB.autoclick('+JSON.stringify(rules)+');');
+}
+function userCode(sc,params){return prelude()+';MB.params='+JSON.stringify(params)+';(async()=>{try{\n'+(sc.code||'')+'\n}catch(e){console.error("[MB скрипт]",e)}})();'}
 function runScripts(wc,pid,stage){
  if(wc.isDestroyed())return;const p=prof(pid);if(!p)return;const url=wc.getURL();if(!/^https?:/i.test(url))return;
  const run=code=>wc.executeJavaScript(code).catch(e=>log('script error: '+(e&&e.message)));
- const txt=((p.autoclick&&p.autoclick.on)?(p.autoclick.rules||''):'')+'\n'+(p.presets||[]).map(id=>(PRESETS.find(x=>x.id===id)||{}).rules||'').join('\n');
- if(stage==='dom-ready'&&txt.trim()){
-  const rules=[];
-  for(const line of txt.split(/\r?\n/)){const l=line.trim();if(!l||l[0]==='#')continue;
-   const parts=l.split('|').map(x=>x.trim()),site=parts.length>1?parts[0]:'*',target=parts.length>1?parts[1]:parts[0],delay=parseInt(parts[2])||300;
-   if(target&&urlMatch(site,url))rules.push({target,delay})}
-  if(rules.length)run(prelude()+';MB.autoclick('+JSON.stringify(rules)+');');
- }
- for(const id of p.scripts||[]){const sc=scripts.find(x=>x.id===id);if(!sc||(sc.runAt||'dom-ready')!==stage)continue;
+ if(stage==='dom-ready'&&p.autoclick&&p.autoclick.on&&p.autoclick.rules)runAuto(p.autoclick.rules,url,run);
+ const all=allScripts();
+ for(const id of enabledIds(p)){const sc=all.find(x=>x.id===id);if(!sc)continue;const params=scriptParams(sc,p);
+  if(sc.type==='autoclick'){if(stage==='dom-ready')runAuto(params.rules||'',url,run);continue}
+  if((sc.runAt||'dom-ready')!==stage)continue;
   if(!(sc.match&&sc.match.length?sc.match:['*']).some(m=>urlMatch(m,url)))continue;
-  run(prelude()+';(async()=>{try{\n'+sc.code+'\n}catch(e){console.error("[MB скрипт]",e)}})();')}
+  run(userCode(sc,params))}
 }
+// скрипты «в самом начале загрузки» (до скриптов сайта) и служебные вставки: через протокол отладки
+async function setDocScript(t,key,source){
+ const wc=t.view.webContents;if(wc.isDestroyed())return;t.ds=t.ds||{};
+ try{
+  try{wc.debugger.attach('1.3')}catch{}
+  if(t.ds[key]){try{await wc.debugger.sendCommand('Page.removeScriptToEvaluateOnNewDocument',{identifier:t.ds[key]})}catch{}delete t.ds[key]}
+  if(source){await wc.debugger.sendCommand('Page.enable').catch(()=>{});const r=await wc.debugger.sendCommand('Page.addScriptToEvaluateOnNewDocument',{source});t.ds[key]=r.identifier}
+ }catch(e){log('docscript '+key+': '+e.message)}
+}
+function userDocStart(t,url){
+ const p=prof(t.pid);if(!p||!/^https?:/i.test(url))return setDocScript(t,'user',null);
+ const all=allScripts(),parts=[];
+ for(const id of enabledIds(p)){const sc=all.find(x=>x.id===id);if(!sc||sc.type!=='js'||sc.runAt!=='document-start')continue;
+  if(!(sc.match&&sc.match.length?sc.match:['*']).some(m=>urlMatch(m,url)))continue;parts.push(userCode(sc,scriptParams(sc,p)))}
+ return setDocScript(t,'user',parts.length?parts.join('\n;'):null);
+}
+function reloadProfileTabs(pid){for(const W of windows){if(W.dead)continue;for(const t of W.tabs)if(!t.kind&&t.pid===pid&&!t.view.webContents.isDestroyed()){try{t.view.webContents.reload()}catch{}}}}
 
 // ---------- свои тёмные диалоги вместо системных белых окон ----------
 let dlgN=0;const dlgs=new Map();
@@ -539,21 +615,53 @@ function loadAds(){let txt='';try{txt=fs.readFileSync(ADF(),'utf8');adUpdated=fs
  adSet=parseHosts(txt);log('adblock: '+adSet.size+' domains')}
 async function updateAds(force){
  if(!force&&Date.now()-adUpdated<6*864e5)return false;
+ await loadEngine(true);
  const urls=['https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts','https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext'];
  let all='';for(const u of urls){try{const r=await fetch(u,{signal:AbortSignal.timeout(30000)});if(r.ok)all+='\n'+await r.text()}catch(e){log('adblock update: '+e.message)}}
  if(all.length<1000)return false;fs.writeFileSync(ADF(),all);adUpdated=Date.now();loadAds();return true}
 const isAd=h=>{for(let x=h;x&&x.includes('.');x=x.slice(x.indexOf('.')+1))if(adSet.has(x))return true;return false};
-function adblockSession(ses,pid){
- if(adHooked.has(pid))return;adHooked.add(pid);
+let AdMod=null,adEngine=null,tldtsParse=null;
+try{AdMod=require('@ghostery/adblocker')}catch(e){}
+try{tldtsParse=require('tldts-experimental').parse}catch(e){}
+const ADE=()=>path.join(DATA(),'adengine.bin');
+const TYPEMAP={mainFrame:'main_frame',subFrame:'sub_frame',stylesheet:'stylesheet',script:'script',image:'image',font:'font',object:'object',xhr:'xmlhttprequest',ping:'ping',cspReport:'csp_report',media:'media',webSocket:'websocket',other:'other'};
+async function loadEngine(force){
+ if(!AdMod)return false;
+ try{
+  if(force)try{fs.rmSync(ADE(),{force:true})}catch{}
+  adEngine=await AdMod.FiltersEngine.fromPrebuiltAdsAndTracking(fetch,{path:ADE(),read:fs.promises.readFile,write:fs.promises.writeFile});
+  log('adblock engine ready');return true;
+ }catch(e){log('adblock engine: '+e.message);return false}
+}
+// косметические фильтры и «скриптлеты» (в т.ч. для YouTube) вставляются до скриптов сайта
+async function adCosmetics(t,url){
+ if(!adEngine||!cfg.adblock||!/^https?:/i.test(url))return setDocScript(t,'ad',null);
+ try{
+  const u=new URL(url),dm=(tldtsParse?tldtsParse(u.hostname).domain:null)||u.hostname;
+  const r=adEngine.getCosmeticsFilters({url,hostname:u.hostname,domain:dm,classes:[],hrefs:[],ids:[],getBaseRules:true,getInjectionRules:true,getExtendedRules:false,getRulesFromDOM:false,getRulesFromHostname:true});
+  const parts=[];
+  if(r.styles)parts.push("(()=>{const css="+JSON.stringify(r.styles)+";const add=()=>{const s=document.createElement('style');s.textContent=css;(document.head||document.documentElement).appendChild(s)};if(document.documentElement)add();else new MutationObserver((m,o)=>{if(document.documentElement){o.disconnect();add()}}).observe(document,{childList:true})})();");
+  for(const sc of r.scripts||[])parts.push(sc);
+  await setDocScript(t,'ad',parts.length?parts.join('\n;'):null);
+ }catch(e){log('cosmetics: '+e.message)}
+}
+function adblockSession(ses,pid,key){
+ key=key||pid;if(adHooked.has(key))return;adHooked.add(key);
  ses.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*','ws://*/*','wss://*/*']},(d,cb)=>{
   if(!cfg.adblock||d.resourceType==='mainFrame'){cb({});return}
   let h='';try{h=new URL(d.url).hostname.toLowerCase()}catch{cb({});return}
-  if(!isAd(h)){cb({});return}
+  let hit=false,redir=null;
+  if(adEngine){try{
+   const wc0=d.webContentsId?webContents.fromId(d.webContentsId):null,src=(wc0&&!wc0.isDestroyed()&&wc0.getURL())||d.referrer||'';
+   const m=adEngine.match(AdMod.Request.fromRawDetails({url:d.url,sourceUrl:src,type:TYPEMAP[d.resourceType]||'other'}));
+   if(m.match){hit=true;if(m.redirect&&m.redirect.dataUrl)redir=m.redirect.dataUrl}}catch(e){}}
+  if(!hit&&isAd(h))hit=true;
+  if(!hit){cb({});return}
   adCount++;
   for(const W of windows){const t=W.tabs.find(x=>!x.kind&&x.view.webContents.id===d.webContentsId);
    if(t){t.blocked=(t.blocked||0)+1;adPend.add(W);clearTimeout(adT);
     adT=setTimeout(()=>{const c=curW;for(const W2 of adPend){if(useW(W2))pushTabs()}adPend.clear();if(c&&!c.dead)useW(c)},500);break}}
-  cb({cancel:true});
+  if(redir)cb({redirectURL:redir});else cb({cancel:true});   // заглушка вместо рекламного скрипта: плеер не ломается
  });
 }
 
@@ -572,8 +680,8 @@ function detachTab(id,x,y){
 // ---------- разрешения сайтов (камера, микрофон, геолокация, уведомления) ----------
 const PERM_ASK={geolocation:'к вашему местоположению','media':'к камере и микрофону','display-capture':'к записи экрана',midi:'к MIDI-устройствам','clipboard-read':'к чтению буфера обмена'};
 const permHooked=new Set();
-function permSession(ses,pid){
- if(permHooked.has(pid))return;permHooked.add(pid);
+function permSession(ses,pid,key){
+ key=key||pid;if(permHooked.has(key))return;permHooked.add(key);
  ses.setPermissionRequestHandler((wc,perm,cb,details)=>{
   const p=prof(pid);if(!p){cb(false);return}
   if(perm==='notifications'){cb(p.notify!==false);return}
@@ -590,22 +698,42 @@ function permSession(ses,pid){
 // ---------- перевод страницы ----------
 const LANGS={ru:'русский',en:'английский',uk:'украинский',de:'немецкий',fr:'французский',es:'испанский',it:'итальянский',pl:'польский',tr:'турецкий','zh-CN':'китайский'};
 const trSrc=n=>fs.readFileSync(path.join(__dirname,'ui',n),'utf8');
-async function gtxBatch(ses,batch,to){
- const r=await ses.fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&dt=t&tl='+encodeURIComponent(to),{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:'q='+encodeURIComponent(batch.join('\n')),credentials:'omit',signal:AbortSignal.timeout(20000)});
- if(!r.ok)throw new Error('сервис перевода ответил '+r.status);
- const d=await r.json();return ((d&&d[0])||[]).map(x=>(x&&x[0])||'').join('').split('\n');
+let msTok=null,msTokT=0;const MSLANG={'zh-CN':'zh-Hans'};
+async function msToken(ses){
+ if(msTok&&Date.now()-msTokT<8*60000)return msTok;
+ const r=await ses.fetch('https://edge.microsoft.com/translate/auth',{credentials:'omit',signal:AbortSignal.timeout(10000)});
+ if(!r.ok)throw new Error('авторизация переводчика: '+r.status);msTok=(await r.text()).trim();msTokT=Date.now();return msTok;
+}
+async function msBatch(ses,texts,to){
+ const tok=await msToken(ses);
+ const r=await ses.fetch('https://api-edge.cognitive.microsofttranslator.com/translate?api-version=3.0&to='+encodeURIComponent(MSLANG[to]||to),{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+tok},body:JSON.stringify(texts.map(Text=>({Text}))),credentials:'omit',signal:AbortSignal.timeout(25000)});
+ if(!r.ok){if(r.status===401)msTok=null;throw new Error('переводчик ответил '+r.status)}
+ const d=await r.json();return d.map(x=>(x.translations&&x.translations[0]&&x.translations[0].text)||null);
+}
+async function gtxGet(ses,text,to){
+ const r=await ses.fetch('https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&dt=t&tl='+encodeURIComponent(to)+'&q='+encodeURIComponent(text),{credentials:'omit',signal:AbortSignal.timeout(15000)});
+ if(!r.ok)throw new Error('переводчик ответил '+r.status);const d=await r.json();return ((d&&d[0])||[]).map(x=>(x&&x[0])||'').join('');
 }
 async function translateTexts(ses,texts,to){
- const out=new Array(texts.length).fill(null);let i=0;
+ const out=new Array(texts.length).fill(null);let i=0,viaMs=true;
  while(i<texts.length){
-  let j=i,len=0;const batch=[];
-  while(j<texts.length&&batch.length<60&&(len+texts[j].length<3500||!batch.length)){const x=texts[j].replace(/\s+/g,' ').slice(0,3000);batch.push(x);len+=x.length+1;j++}
-  let lines=null;try{lines=await gtxBatch(ses,batch,to)}catch(e){if(i===0)throw e}
-  if(lines&&lines.length===batch.length)for(let k=0;k<batch.length;k++)out[i+k]=lines[k];
-  else for(let k=0;k<batch.length;k++){try{const l=await gtxBatch(ses,[batch[k]],to);out[i+k]=l.join(' ')}catch{}}   // запасной путь: по одной строке
-  i=j;
+  let j=i,len=0;const idx=[];
+  while(j<texts.length&&idx.length<80&&(len+texts[j].length<9000||!idx.length)){idx.push(j);len+=texts[j].length;j++}
+  const batch=idx.map(k=>texts[k].replace(/\s+/g,' ').slice(0,4000));let res=null;
+  if(viaMs){try{res=await msBatch(ses,batch,to)}catch(e){log('ms translate: '+e.message);viaMs=false}}
+  if(!res){const rr=new Array(batch.length).fill(null);let q=0;
+   await Promise.all(Array.from({length:6},async()=>{while(q<batch.length){const k=q++;try{rr[k]=await gtxGet(ses,batch[k],to)}catch(e){}}}));
+   if(!rr.some(Boolean)&&i===0)throw new Error('переводчик недоступен');res=rr}
+  idx.forEach((k,n)=>{out[k]=res[n]});i=j;
  }
  return out;
+}
+async function translateSelection(t,text){
+ const to=cfg.translateTo||'ru';
+ try{const [res]=await translateTexts(t.view.webContents.session,[text],to);
+  const r=await appDialog({title:'Перевод',message:res||'(пусто)',detail:text.length>300?text.slice(0,300)+'…':text,buttons:['Копировать','Закрыть'],defaultId:1,cancelId:1,type:'info'});
+  if(r.response===0)clipboard.writeText(res||'')
+ }catch(e){appDialog({title:'Перевод',type:'error',message:'Не удалось перевести: '+e.message})}
 }
 async function translatePage(t,lang){
  if(!t||t.kind)return;const wc=t.view.webContents,W=t.W,to=lang||cfg.translateTo||'ru';
@@ -629,10 +757,11 @@ async function translateToggle(t){
 function ctxMenu(t,pr){
  const wc=t.view.webContents,vb=t.view.getBounds?t.view.getBounds():{x:0,y:topH()},items=[],sel=(pr.selectionText||'').trim(),link=pr.linkURL,img=pr.mediaType==='image'&&pr.srcURL,f=pr.editFlags||{};
  const cut=x=>x.length>26?x.slice(0,26)+'…':x;
- if(link)items.push({label:'Открыть ссылку в новой вкладке',fn:()=>newTab(t.pid,link)},{label:'Открыть ссылку в профиле…',fn:()=>profileMenu(null,link)},{label:'Копировать адрес ссылки',fn:()=>clipboard.writeText(link)},{type:'sep'});
- if(img)items.push({label:'Открыть изображение в новой вкладке',fn:()=>newTab(t.pid,pr.srcURL)},{label:'Сохранить изображение как…',fn:()=>wc.downloadURL(pr.srcURL)},{label:'Копировать изображение',fn:()=>wc.copyImageAt(pr.x,pr.y)},{label:'Копировать адрес изображения',fn:()=>clipboard.writeText(pr.srcURL)},{type:'sep'});
+ if(pr.misspelledWord){for(const sg of (pr.dictionarySuggestions||[]).slice(0,5))items.push({label:sg,fn:()=>wc.replaceMisspelling(sg)});items.push({label:'Добавить в словарь',fn:()=>wc.session.addWordToSpellCheckerDictionary(pr.misspelledWord)},{type:'sep'})}
+ if(link)items.push({label:'Открыть ссылку в новой вкладке',fn:()=>newTab(t.pid,link,cfg.openBg!==false,t.id)},{label:'Открыть ссылку в профиле…',fn:()=>profileMenu(null,link)},{label:'Копировать адрес ссылки',fn:()=>clipboard.writeText(link)},{type:'sep'});
+ if(img)items.push({label:'Открыть изображение в новой вкладке',fn:()=>newTab(t.pid,pr.srcURL,cfg.openBg!==false,t.id)},{label:'Сохранить изображение как…',fn:()=>wc.downloadURL(pr.srcURL)},{label:'Копировать изображение',fn:()=>wc.copyImageAt(pr.x,pr.y)},{label:'Копировать адрес изображения',fn:()=>clipboard.writeText(pr.srcURL)},{type:'sep'});
  if(pr.isEditable)items.push({label:'Отменить',hint:'Ctrl+Z',disabled:!f.canUndo,fn:()=>wc.undo()},{label:'Вырезать',hint:'Ctrl+X',disabled:!f.canCut,fn:()=>wc.cut()},{label:'Копировать',hint:'Ctrl+C',disabled:!f.canCopy,fn:()=>wc.copy()},{label:'Вставить',hint:'Ctrl+V',disabled:!f.canPaste,fn:()=>wc.paste()},{label:'Выделить всё',hint:'Ctrl+A',fn:()=>wc.selectAll()},{type:'sep'});
- else if(sel)items.push({label:'Копировать',hint:'Ctrl+C',fn:()=>wc.copy()},{label:'Найти «'+cut(sel)+'» в поиске',fn:()=>newTab(t.pid,searchUrl()+encodeURIComponent(sel))},{type:'sep'});
+ else if(sel)items.push({label:'Копировать',hint:'Ctrl+C',fn:()=>wc.copy()},{label:'Найти «'+cut(sel)+'» в поиске',fn:()=>newTab(t.pid,searchUrl()+encodeURIComponent(sel),cfg.openBg!==false,t.id)},{label:'Перевести выделенное на '+(LANGS[cfg.translateTo]||'русский'),fn:()=>translateSelection(t,sel)},{type:'sep'});
  if(!link&&!img&&!sel&&!pr.isEditable){const nh=wc.navigationHistory;
   items.push({label:'Назад',hint:'Alt+←',disabled:!nh.canGoBack(),fn:()=>nh.goBack()},{label:'Вперёд',hint:'Alt+→',disabled:!nh.canGoForward(),fn:()=>nh.goForward()},{label:'Обновить',hint:'F5',fn:()=>wc.reload()},{type:'sep'})}
  items.push({label:t.translated?'Показать оригинал':'Перевести на '+(LANGS[cfg.translateTo]||'русский'),fn:()=>translateToggle(t)},
@@ -655,6 +784,72 @@ function moveTabToWindow(t,from,to,idx){
  if(!from.tabs.length&&!from.dead&&windows.filter(x=>!x.dead).length>1)from.win.close();
 }
 
+// ---------- вкладки: поиск, закрепление, окна инкогнито, очистка ----------
+function focusTab(W,t){if(!useW(W))return;setActive(t.id);layout();pushTabs();try{if(W.win.isMinimized())W.win.restore();W.win.focus()}catch{}}
+function tabSearch(anchor){
+ const items=[];
+ for(const W of windows){if(W.dead)continue;for(const t of W.tabs){const p=t.kind?null:prof(t.pid),title=t.kind?PAGES[t.kind].title:(t.title||t.url||'Новая вкладка');
+  items.push({label:title,color:t.kind?'#8b93a5':colorOf(t.pid),letter:t.kind?PAGES[t.kind].icon:(p?p.name[0].toUpperCase():'?'),tag:p?p.name:'',fn:()=>focusTab(W,t)})}}
+ if(items.length)showMenu(items,anchor||{x:200,y:44,align:'left'},{search:true,placeholder:'Найти вкладку…'});
+}
+function openIncognito(pid){const W=createWindow({incognito:true,instant:true});useW(W);return newTab(pid)}
+function incognitoFlow(){const t=cur();if(t&&!t.kind)openIncognito(t.pid);else profileMenu(null,null,true)}
+function newWindowFlow(){const t=cur(),pid=t&&!t.kind?t.pid:null,inc=!!(curW&&curW.incognito),W=createWindow({instant:true,incognito:inc});useW(W);if(pid)newTab(pid);else openPage('manager')}
+function pinTab(id){const t=tabs.find(x=>x.id===id);if(!t)return;t.pinned=!t.pinned;const pin=tabs.filter(x=>x.pinned),rest=tabs.filter(x=>!x.pinned);tabs.splice(0,tabs.length,...pin,...rest);pushTabs()}
+function moveActive(d){const i=tabs.findIndex(x=>x.id===active),j=i+d;if(i<0||j<0||j>=tabs.length)return;const [t]=tabs.splice(i,1);tabs.splice(j,0,t);pushTabs()}
+async function clearDataFlow(){
+ const t=cur();if(!t||t.kind){appDialog({message:'Открой страницу профиля, данные которого нужно очистить.'});return}
+ const p=prof(t.pid),r=await appDialog({title:'Очистка данных',message:'Очистить данные профиля «'+(p?p.name:'?')+'»?',detail:'Кэш удаляется без последствий. Куки и хранилище сайтов удалят входы во все аккаунты этого профиля.',buttons:['Очистить кэш','Кэш и куки','Отмена'],defaultId:0,cancelId:2,type:'question'});
+ if(r.response===2)return;const ses=t.view.webContents.session;
+ try{await ses.clearCache();if(r.response===1)await ses.clearStorageData();reloadProfileTabs(t.pid)}catch(e){appDialog({type:'error',message:'Не удалось очистить: '+e.message})}
+}
+function savePage(w){dialog.showSaveDialog(win,{defaultPath:(w.getTitle()||'page').replace(/[\\/:*?"<>|]/g,'_')+'.html',filters:[{name:'Веб-страница, полностью',extensions:['html']}]}).then(r=>{if(!r.canceled&&r.filePath)w.savePage(r.filePath,'HTMLComplete').catch(()=>{})})}
+const hostOf=u=>{try{return new URL(u).hostname}catch{return ''}};
+const navTo=text=>{const t=cur();hideMenu();if(t&&!t.kind)t.view.webContents.loadURL(norm(text))};
+
+// ---------- расширения Chrome (установка по ссылке или идентификатору) ----------
+const EXD=()=>path.join(DATA(),'extensions'),extLoaded=new Map();
+function extName(dir,m){
+ const mm=/^__MSG_(.+)__$/.exec(m.name||'');if(!mm)return m.name||'';
+ for(const lang of [m.default_locale,'ru','en','en_US']){if(!lang)continue;
+  try{const j=JSON.parse(fs.readFileSync(path.join(dir,'_locales',lang,'messages.json'),'utf8')),k=Object.keys(j).find(x=>x.toLowerCase()===mm[1].toLowerCase());if(k&&j[k].message)return j[k].message}catch{}}
+ return m.name;
+}
+function extList(){
+ try{return fs.readdirSync(EXD(),{withFileTypes:true}).filter(d=>d.isDirectory()).map(d=>{const dir=path.join(EXD(),d.name);
+  try{const m=JSON.parse(fs.readFileSync(path.join(dir,'manifest.json'),'utf8'));return{id:d.name,name:extName(dir,m)||d.name,version:m.version||'',mv:m.manifest_version||0}}catch{return{id:d.name,name:d.name,version:'',mv:0}}})}
+ catch{return[]}
+}
+function unzipTo(buf,dir){
+ let off=0;if(buf.toString('latin1',0,4)==='Cr24'){const v=buf.readUInt32LE(4);off=v===3?12+buf.readUInt32LE(8):16+buf.readUInt32LE(8)+buf.readUInt32LE(12)}
+ const z=buf.subarray(off);let e=-1;
+ for(let i=z.length-22;i>=Math.max(0,z.length-70000);i--){if(z.readUInt32LE(i)===0x06054b50){e=i;break}}
+ if(e<0)throw new Error('это не архив расширения');
+ const n=z.readUInt16LE(e+10);let q=z.readUInt32LE(e+16);const zlib=require('zlib'),root=path.resolve(dir)+path.sep;
+ for(let k=0;k<n;k++){
+  if(z.readUInt32LE(q)!==0x02014b50)throw new Error('архив повреждён');
+  const method=z.readUInt16LE(q+10),csz=z.readUInt32LE(q+20),nl=z.readUInt16LE(q+28),el=z.readUInt16LE(q+30),cl=z.readUInt16LE(q+32),lo=z.readUInt32LE(q+42);
+  const name=z.toString('utf8',q+46,q+46+nl);q+=46+nl+el+cl;if(name.endsWith('/'))continue;
+  const lnl=z.readUInt16LE(lo+26),lel=z.readUInt16LE(lo+28),ds=lo+30+lnl+lel,data=z.subarray(ds,ds+csz),out=path.resolve(dir,name);
+  if(!out.startsWith(root))continue;   // защита от выхода за пределы папки
+  fs.mkdirSync(path.dirname(out),{recursive:true});fs.writeFileSync(out,method===0?data:zlib.inflateRawSync(data));
+ }
+}
+async function extInstall(input){
+ const m=String(input||'').match(/[a-p]{32}/);if(!m)throw new Error('Не найден идентификатор расширения (32 буквы). Вставь ссылку из Chrome Web Store или сам идентификатор.');
+ const id=m[0],url='https://clients2.google.com/service/update2/crx?response=redirect&prodversion='+CHR+'&acceptformat=crx2,crx3&x='+encodeURIComponent('id='+id+'&installsource=ondemand&uc');
+ const r=await fetch(url,{signal:AbortSignal.timeout(60000)});if(!r.ok)throw new Error('Не удалось скачать расширение (код '+r.status+')');
+ const buf=Buffer.from(await r.arrayBuffer());if(buf.length<1000)throw new Error('Магазин не отдал файл расширения');
+ const dir=path.join(EXD(),id);fs.rmSync(dir,{recursive:true,force:true});fs.mkdirSync(dir,{recursive:true});unzipTo(buf,dir);
+ if(!fs.existsSync(path.join(dir,'manifest.json')))throw new Error('В архиве нет manifest.json');
+ return id;
+}
+async function loadExts(ses,p,part){
+ let m=extLoaded.get(part);if(!m){m=new Map();extLoaded.set(part,m)}
+ for(const id of p.exts||[]){if(m.has(id))continue;const dir=path.join(EXD(),id);if(!fs.existsSync(dir))continue;
+  try{m.set(id,await ses.loadExtension(dir,{allowFileAccess:true}))}catch(e){log('extension '+id+': '+e.message)}}
+}
+
 // ---------- IPC ----------
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
 H('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
@@ -670,7 +865,7 @@ H('remove',(e,id)=>{const ctx=curW;for(const W of [...windows]){if(W.dead)contin
 H('openInShell',(e,id)=>newTab(id));
 H('newTab',(e,id)=>newTab(id));
 H('newTabMenu',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;profileMenu(a)});
-H('activate',(e,id)=>{setActive(id);layout();pushTabs()});
+H('activate',(e,id)=>{if(curW)curW.anchor=null;setActive(id);layout();pushTabs()});
 H('closeTab',(e,id)=>closeTab(id));
 H('navigate',(e,s)=>{const t=tabs.find(x=>x.id===active);if(t&&!t.kind)t.view.webContents.loadURL(norm(s))});
 H('nav',(e,a)=>{const t=tabs.find(x=>x.id===active);if(!t||t.kind)return;const h=t.view.webContents.navigationHistory;
@@ -705,13 +900,12 @@ H('find',(e,d)=>{const w=pageWc();if(w&&d.text)w.findInPage(d.text,{forward:d.fo
 H('stopFind',()=>{const w=pageWc();if(w)w.stopFindInPage('clearSelection')});
 H('pickFolder',async()=>{const r=await dialog.showOpenDialog(win,{properties:['openDirectory','createDirectory']});return r.canceled?null:r.filePaths[0]});
 H('getProfile',(e,id)=>{const p=prof(id);if(!p)return null;const x=p.proxy;
- return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:p.scripts||[],presets:p.presets||[],notify:p.notify!==false,
+ return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:enabledIds(p),notify:p.notify!==false,
   conn:{mode:p.vpn?'vpn':x?'proxy':'none',type:x?x.type:'socks5',host:x?x.host:'',port:x?x.port:'',user:(x&&x.user)||'',hasPass:!!(x&&x.pass),hasVpn:!!p.vpn,vpnNote:!!p.vpnNote}}});
 H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{error:'Профиль не найден'};
  if(d.name&&d.name.trim())p.name=d.name.trim();if(d.downloadDir)p.downloadDir=d.downloadDir;else delete p.downloadDir;
  if(d.autoclick)p.autoclick={on:!!d.autoclick.on,rules:String(d.autoclick.rules||'').slice(0,4000)};
- if(Array.isArray(d.scripts))p.scripts=d.scripts.filter(x=>scripts.some(s=>s.id===x));
- if(Array.isArray(d.presets))p.presets=d.presets.filter(x=>PRESETS.some(s=>s.id===x));
+ if(Array.isArray(d.scripts)){p.scripts=d.scripts.filter(x=>allScripts().some(s=>s.id===x));delete p.presets}
  if(typeof d.notify==='boolean')p.notify=d.notify;
  let note='';const c=d.conn;
  if(c){
@@ -739,7 +933,7 @@ H('histRemove',(e,id)=>{history=history.filter(h=>h.id!==id);saveHistNow()});
 H('histClear',()=>{history=[];saveHistNow()});
 H('showMenu',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;mainMenu(a)});
 H('menuGet',()=>menuPayload);
-H('menuResize',(e,h)=>{if(menuOpen&&menuV)menuV.setBounds(menuBounds(270,h))});
+H('menuResize',(e,h)=>{if(menuOpen&&menuV)menuV.setBounds(menuBounds(menuW,h))});
 H('menuPick',(e,id)=>{const f=menuActs.get(id);hideMenu();if(f)setTimeout(f,0)});
 H('checkConn',(e,id)=>checkConn(id));
 H('applyGeo',(e,{id,tz,lang})=>{const l=load(),p=l.find(x=>x.id===id);if(!p)return false;if(tz)p.tz=tz;else delete p.tz;if(lang)p.lang=lang;else delete p.lang;save(l);pushMgr();return true});
@@ -752,12 +946,23 @@ H('toastAction',(e,{action,id})=>{
  const d=downloads.find(x=>x.id===id);if(!d)return;const it=live.get(id);
  if(action==='open')shell.openPath(d.path);else if(action==='show')shell.showItemInFolder(d.path);else if(action==='cancel'&&it)it.cancel();
  if(action!=='cancel')hideToast()});
-H('scList',()=>scripts);
+H('scList',()=>allScripts());
+H('scProfiles',()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),enabled:enabledIds(p),cfg:p.scriptCfg||{}})));
+H('scToggle',(e,{sid,pid,on})=>{const l=load(),p=l.find(x=>x.id===pid);if(!p)return false;
+ const ids=enabledIds(p).filter(x=>x!==sid);if(on)ids.push(sid);p.scripts=ids;delete p.presets;save(l);reloadProfileTabs(pid);pushMgr();return true});
+H('scCfg',(e,{sid,pid,cfg})=>{const l=load(),p=l.find(x=>x.id===pid);if(!p)return false;p.scriptCfg=p.scriptCfg||{};
+ if(cfg&&Object.keys(cfg).length)p.scriptCfg[sid]=cfg;else delete p.scriptCfg[sid];save(l);reloadProfileTabs(pid);return true});
 H('scSave',(e,sc)=>{if(!sc||!(sc.name||'').trim())return null;let x=scripts.find(s=>s.id===sc.id);if(!x){x={id:uid()};scripts.push(x)}
- x.name=sc.name.trim().slice(0,80);x.code=String(sc.code||'').slice(0,200000);
- x.match=(Array.isArray(sc.match)?sc.match:String(sc.match||'').split(/\r?\n/)).map(m=>m.trim()).filter(Boolean);x.runAt=sc.runAt==='load'?'load':'dom-ready';saveScripts();return x.id});
+ x.name=sc.name.trim().slice(0,80);x.desc=String(sc.desc||'').slice(0,300);x.type=sc.type==='autoclick'?'autoclick':'js';x.code=String(sc.code||'').slice(0,200000);
+ x.match=(Array.isArray(sc.match)?sc.match:String(sc.match||'').split(/\r?\n/)).map(m=>m.trim()).filter(Boolean);
+ x.runAt=['load','document-start'].includes(sc.runAt)?sc.runAt:'dom-ready';
+ x.params=(Array.isArray(sc.params)?sc.params:[]).filter(q=>q&&/^[A-Za-z_]\w*$/.test(q.key||'')).slice(0,20).map(q=>({key:q.key,label:String(q.label||q.key).slice(0,120),type:['number','bool'].includes(q.type)?q.type:'text',def:q.def}));
+ if(x.type==='autoclick'&&!x.params.some(q=>q.key==='rules'))x.params.unshift({key:'rules',label:'Правила: сайт | кнопка | задержка, мс',type:'text',def:''});
+ saveScripts();for(const p of load())if(enabledIds(p).includes(x.id))reloadProfileTabs(p.id);return x.id});
+H('scDup',(e,sid)=>{const s0=allScripts().find(x=>x.id===sid);if(!s0)return null;
+ const x={id:uid(),name:s0.name+' (копия)',desc:s0.desc||'',type:s0.type,match:s0.match||['*'],runAt:s0.runAt||'dom-ready',code:s0.code||'',params:JSON.parse(JSON.stringify(s0.params||[]))};scripts.push(x);saveScripts();return x.id});
 H('scDelete',(e,id)=>{scripts=scripts.filter(s=>s.id!==id);saveScripts();const l=load();let ch=false;
- for(const p of l)if(p.scripts&&p.scripts.includes(id)){p.scripts=p.scripts.filter(x=>x!==id);ch=true}if(ch)save(l)});
+ for(const p of l){if(p.scripts&&p.scripts.includes(id)){p.scripts=p.scripts.filter(x=>x!==id);ch=true}if(p.scriptCfg&&p.scriptCfg[id]){delete p.scriptCfg[id];ch=true}}if(ch)save(l)});
 H('openScripts',()=>{openPage('scripts')});
 H('importProfiles',(e,text)=>{const l=load(),bad=[];let n=0;
  for(const raw of String(text).split(/\r?\n/)){const line=raw.trim();if(!line||line[0]==='#')continue;
@@ -770,7 +975,6 @@ H('importProfiles',(e,text)=>{const l=load(),bad=[];let n=0;
    catch{bad.push(line);continue}}
   l.push(p);n++}
  save(l);pushMgr();pushTabs();return{n,bad}});
-H('presetList',()=>PRESETS.map(x=>({id:x.id,name:x.name})));
 H('resetPerms',(e,id)=>{const l=load(),p=l.find(x=>x.id===id);if(p){delete p.perms;save(l)}return true});
 H('translatePage',()=>{const t=cur();if(t)translateToggle(t)});
 H('dragStart',(e,{id,x,y,gx,gy})=>{
@@ -792,11 +996,35 @@ H('dragEnd',(e,{x,y})=>{
  if(d.hint&&!d.hint.dead)d.hint.win.webContents.send('drop-hint',false);
  const T=d.W.dead?null:stripAt(x,y,d.W);
  if(T)moveTabToWindow(d.t,d.W,T,null);else if(!d.W.dead&&useW(d.W)){layout();pushTabs()}});
+H('tabSearch',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;tabSearch(a)});
+H('muteTab',(e,id)=>{const t=tabs.find(x=>x.id===id);if(!t||t.kind)return;const w=t.view.webContents;w.setAudioMuted(!w.isAudioMuted());t.muted=w.isAudioMuted();pushTabs()});
+H('navMenu',(e,{dir,anchor})=>{const w=pageWc();if(!w)return;const nh=w.navigationHistory,ents=nh.getAllEntries(),ai=nh.getActiveIndex(),items=[];
+ if(dir==='back'){for(let i=ai-1;i>=0;i--)items.push({label:ents[i].title||ents[i].url,tag:hostOf(ents[i].url),fn:()=>nh.goToIndex(i)})}
+ else{for(let i=ai+1;i<ents.length;i++)items.push({label:ents[i].title||ents[i].url,tag:hostOf(ents[i].url),fn:()=>nh.goToIndex(i)})}
+ if(items.length)showMenu(items.slice(0,15),anchor,{width:340})});
+H('suggest',(e,{q,anchor})=>{
+ q=String(q||'').trim();if(!q){if(menuOpen&&menuPayload.suggest)hideMenu();return}
+ const ql=q.toLowerCase(),t=cur(),items=[],looksUrl=/^[^\s]+\.[^\s]{2,}$/.test(q)||/^https?:\/\//i.test(q),seen=new Set();
+ items.push({label:looksUrl?'Открыть '+q:'Искать «'+q+'»',hint:'Enter',fn:()=>navTo(q)});
+ let n=0;for(const b of bookmarks){if(n>=3)break;if(((b.title||'')+' '+b.url).toLowerCase().includes(ql)){seen.add(b.url);n++;items.push({label:'★ '+(b.title||b.url),tag:hostOf(b.url),fn:()=>navTo(b.url)})}}
+ let m=0;for(const h of history){if(m>=6)break;if(t&&!t.kind&&h.pid!==t.pid)continue;if(seen.has(h.url))continue;if(((h.title||'')+' '+h.url).toLowerCase().includes(ql)){seen.add(h.url);m++;items.push({label:h.title||h.url,tag:hostOf(h.url),fn:()=>navTo(h.url)})}}
+ suggestSel=-1;showMenu(items,anchor,{noFocus:true,suggest:true,width:Math.max(320,(anchor&&anchor.width)||320)})});
+H('suggestMove',(e,d)=>{if(!menuOpen||!menuPayload.suggest)return;const n=menuPayload.items.length;if(!n)return;suggestSel=suggestSel<0?(d>0?0:n-1):(suggestSel+d+n)%n;if(menuV&&!menuV.webContents.isDestroyed())menuV.webContents.send('menu-sel',suggestSel)});
+H('suggestPick',()=>{if(!menuOpen||!menuPayload.suggest||suggestSel<0)return false;const it=menuPayload.items[suggestSel],f=it&&it.id&&menuActs.get(it.id);if(f){hideMenu();f();return true}return false});
+H('suggestHide',()=>{if(menuOpen&&menuPayload.suggest)hideMenu()});
+H('extList',()=>({exts:extList(),profiles:load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),enabled:p.exts||[]}))}));
+H('extInstall',async(e,input)=>{try{return{ok:true,id:await extInstall(input)}}catch(x){return{error:x.message}}});
+H('extToggle',async(e,{id,pid,on})=>{const l=load(),p=l.find(x=>x.id===pid);if(!p)return false;const set=new Set(p.exts||[]);if(on)set.add(id);else set.delete(id);p.exts=[...set];save(l);
+ if(!on){const part='persist:p-'+pid,m=extLoaded.get(part),ex=m&&m.get(id);if(ex){try{await session.fromPartition(part).removeExtension(ex.id)}catch{}m.delete(id)}}
+ reloadProfileTabs(pid);return true});
+H('extRemove',async(e,id)=>{
+ for(const [part,m] of extLoaded){const ex=m.get(id);if(ex){try{await session.fromPartition(part).removeExtension(ex.id)}catch{}m.delete(id)}}
+ const l=load();for(const p of l)if(p.exts)p.exts=p.exts.filter(x=>x!==id);save(l);try{fs.rmSync(path.join(EXD(),id),{recursive:true,force:true})}catch{}return true});
 H('moveTab',(e,{id,to})=>{const i=tabs.findIndex(x=>x.id===id);if(i<0)return;const [t]=tabs.splice(i,1);tabs.splice(Math.max(0,Math.min(to,tabs.length)),0,t);pushTabs()});
 H('detachTab',(e,{id,x,y})=>detachTab(id,x,y));
 H('tabMenu',(e,{id,anchor})=>{
  const t=tabs.find(x=>x.id===id);if(!t)return;const i=tabs.indexOf(t),items=[];
- if(!t.kind)items.push({label:'Обновить',fn:()=>t.view.webContents.reload()},{label:'Дублировать',fn:()=>newTab(t.pid,t.view.webContents.getURL()||t.url)});
+ if(!t.kind)items.push({label:'Обновить',fn:()=>t.view.webContents.reload()},{label:'Дублировать',fn:()=>newTab(t.pid,t.view.webContents.getURL()||t.url,false,t.id)},{label:t.pinned?'Открепить вкладку':'Закрепить вкладку',fn:()=>pinTab(id)},{label:t.muted?'Включить звук вкладки':'Отключить звук вкладки',fn:()=>{const w=t.view.webContents;w.setAudioMuted(!w.isAudioMuted());t.muted=w.isAudioMuted();pushTabs()}});
  if(tabs.length>1)items.push({label:'Открыть в новом окне',fn:()=>{const pt=screen.getCursorScreenPoint();detachTab(id,pt.x,pt.y)}});
  items.push({type:'sep'},{label:'Закрыть',hint:'Ctrl+W',fn:()=>closeTab(id)});
  if(tabs.length>1)items.push({label:'Закрыть остальные',fn:()=>{for(const x of tabs.filter(y=>y.id!==id))closeTab(x.id)}});
@@ -808,22 +1036,22 @@ H('dlgResize',(e,{id,h})=>{const d=dlgs.get(id);if(!d||d.w.isDestroyed())return;
 H('uiConfirm',(e,m)=>appDialog({message:String(m),buttons:['Да','Отмена'],defaultId:0,cancelId:1,type:'question'}).then(r=>r.response===0));
 H('uiAlert',(e,m)=>appDialog({message:String(m)}).then(()=>true));
 H('adToggle',()=>{cfg.adblock=!cfg.adblock;saveCfg();pushTabs();return cfg.adblock});
-H('adInfo',()=>({domains:adSet.size,count:adCount,updated:adUpdated}));
+H('adInfo',()=>({domains:adSet.size,count:adCount,updated:adUpdated,engine:!!adEngine}));
 H('adUpdate',async()=>{const ok=await updateAds(true);return{ok,domains:adSet.size,updated:adUpdated}});
 H('showLog',()=>{shell.showItemInFolder(LOG())});
 const ovl=()=>{const d=nativeTheme.shouldUseDarkColors;return{color:d?'#181c25':'#f3f4f7',symbolColor:d?'#e6e9f0':'#1b1f2a',height:40}};
 function createWindow(o={}){
- const W={win:null,tabs:[],active:null,mode:'top',dead:false,dlRect:null,first:!!o.first},b=o.bounds;
+ const W={win:null,tabs:[],active:null,mode:'top',dead:false,dlRect:null,first:!!o.first,incognito:!!o.incognito,uid:uid()},b=o.bounds;
  const w=new BrowserWindow({width:(b&&b.width)||1280,height:(b&&b.height)||800,...(b&&Number.isFinite(b.x)&&Number.isFinite(b.y)?{x:b.x,y:b.y}:{}),
-  title:'MultiBrowser',icon:ICON,backgroundColor:bgColor(),show:false,titleBarStyle:'hidden',titleBarOverlay:ovl(),
+  title:'MultiBrowser',icon:ICON,backgroundColor:bgColor(),show:false,titleBarStyle:'hidden',titleBarOverlay:o.incognito?{color:'#2b2140',symbolColor:'#e6e9f0',height:40}:ovl(),
   webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false}});
  W.win=w;windows.push(W);w.loadFile('ui/shell.html');
  const c=fn=>(...a)=>{if(useW(W))fn(...a)};
  w.once('ready-to-show',c(()=>{if(o.instant){w.show();return}w.setOpacity(0);w.show();fadeTo(1,240)}));   // плавное появление
  setTimeout(()=>{if(!w.isDestroyed()&&!w.isVisible()){w.show();w.setOpacity(1)}},4000);
  w.on('minimize',()=>{try{w.setOpacity(0)}catch{}});                         // скрываем кадр перерисовки при разворачивании
- w.on('restore',()=>setTimeout(c(()=>fadeTo(1,170)),100));
- w.on('show',c(()=>{if(w.getOpacity()<1&&!fading)fadeTo(1,170)}));
+ w.on('restore',c(()=>fadeTo(1,90)));
+ w.on('show',c(()=>{if(w.getOpacity()<1&&!fading)fadeTo(1,90)}));
  w.on('resize',c(()=>{hideMenu();hideToast()}));
  w.webContents.on('before-input-event',(e,i)=>{if(useW(W)&&hotkey(i,w.webContents))e.preventDefault()});
  w.webContents.on('did-finish-load',c(()=>{layout();pushTabs();pushBm();if(W.first&&!started){started=true;restoreSession()}}));
@@ -834,7 +1062,7 @@ function createWindow(o={}){
  useW(W);return W;
 }
 app.whenReady().then(()=>{
- loadCfg();applyTheme();loadDownloads();loadBm();loadScripts();loadAds();
+ loadCfg();applyTheme();loadDownloads();loadBm();loadScripts();loadAds();loadEngine(false).catch(()=>{});
  try{if(fs.statSync(LOG()).size>200000)fs.rmSync(LOG())}catch{}
  log('start v'+app.getVersion());
  try{app.setAppUserModelId('app.multibrowser')}catch{}
@@ -842,7 +1070,7 @@ app.whenReady().then(()=>{
  createWindow({first:true});ensureFly();
  setupUpdater();
  setTimeout(()=>updateAds(false).catch(()=>{}),15000);setInterval(()=>updateAds(false).catch(()=>{}),12*3600*1000);
- nativeTheme.on('updated',()=>{for(const W of windows){if(W.dead)continue;try{W.win.setTitleBarOverlay(ovl());W.win.setBackgroundColor(bgColor());for(const t of W.tabs)if(t.kind)t.view.setBackgroundColor(bgColor())}catch{}}
+ nativeTheme.on('updated',()=>{for(const W of windows){if(W.dead)continue;try{if(!W.incognito)W.win.setTitleBarOverlay(ovl());W.win.setBackgroundColor(bgColor());for(const t of W.tabs)if(t.kind)t.view.setBackgroundColor(bgColor())}catch{}}
   try{if(panel)panel.setBackgroundColor(bgColor());if(menuV)menuV.setBackgroundColor(bgColor())}catch{}});
 });
 app.on('before-quit',()=>{saveHistNow();for(const j of running.values()){kill(j.chrome);cleanup(j)}for(const t of tunnels.values())cleanup(t)});

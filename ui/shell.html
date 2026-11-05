@@ -56,8 +56,11 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 .ins{position:absolute;top:8px;bottom:2px;width:2px;border-radius:1px;background:var(--a);pointer-events:none}
 #shield.off svg{opacity:.4}#shc{position:absolute;right:0;bottom:1px;font-size:9px;font-style:normal;font-weight:700;background:var(--a);color:#0b1220;border-radius:6px;padding:0 3px;line-height:12px}#shc:empty{display:none}
 #top.drop{box-shadow:inset 0 -3px 0 var(--a)}#side.drop{box-shadow:inset -3px 0 0 var(--a)}
+.au{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--a)}.au svg{width:14px;height:14px}.au:hover{background:var(--b)}
+.tab.pin{width:42px;padding:0 6px;justify-content:center}.tab.pin .ttl,.tab.pin .x,.tab.pin .au{display:none}.tab.aud .dot{box-shadow:0 0 0 2px var(--a)}
+#incb{background:#4b3a75;color:#fff;border-radius:10px;padding:1px 10px;font-size:12px;white-space:nowrap}body.inc{--p:#2b2140}body.inc #top{background:#2b2140}
 </style></head><body>
-<div id="top"><div id="tabs"></div><button id="plus" class="ib" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><div id="grab"></div></div>
+<div id="top"><div id="tabs"></div><button id="plus" class="ib" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button id="tsearch" class="ib" title="Поиск по вкладкам (Ctrl+Shift+A)" aria-label="Поиск по вкладкам"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg></button><div id="grab"></div></div>
 <div id="side"><div id="brand"></div><div id="groups"></div></div>
 <div id="bar">
 <button id="back" class="ib" title="Назад (Alt+←)" aria-label="Назад"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg></button>
@@ -66,7 +69,7 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 <div id="aw"><input id="addr" aria-label="Адресная строка" placeholder="Введи адрес или поисковый запрос"><button id="star" class="ib" title="В закладки (Ctrl+D)" aria-label="В закладки"><svg viewBox="0 0 24 24"><path d="M12 3.5l2.6 5.4 5.9.8-4.3 4.1 1 5.9L12 17l-5.2 2.7 1-5.9-4.3-4.1 5.9-.8z"/></svg></button></div>
 <span id="findbox" hidden><input id="fq" placeholder="Найти на странице" aria-label="Поиск на странице"><span id="fc"></span>
 <button id="fp" class="ib sm" title="Предыдущее"><svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg></button><button id="fn" class="ib sm" title="Следующее"><svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg></button><button id="fx" class="ib sm" title="Закрыть"><svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg></button></span>
-<span id="updt" hidden></span>
+<span id="incb" hidden>Инкогнито</span><span id="updt" hidden></span>
 <button id="shield" class="ib" title="Блокировка рекламы" aria-label="Блокировка рекламы"><svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 5-3 8-7 10-4-2-7-5-7-10V6z"/></svg><i id="shc"></i></button>
 <button id="dl" class="ib" title="Загрузки (Ctrl+J)" aria-label="Загрузки"><svg viewBox="0 0 24 24"><path d="M12 4v10m0 0l-4-4m4 4l4-4M5 19h14"/></svg><i id="dlb"></i></button>
 <button id="mode" class="ib" title="Вид: вкладки сверху / боковая панель" aria-label="Вид"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/></svg></button>

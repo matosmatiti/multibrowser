@@ -23,6 +23,10 @@ button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid 
 select{appearance:none;-webkit-appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b93a5' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer;transition:background-color .15s,border-color .15s,box-shadow .15s,transform .06s}
 select:hover{background-color:var(--h);border-color:var(--a)}select:focus{border-color:var(--a);box-shadow:0 0 0 3px color-mix(in srgb,var(--a) 22%,transparent)}select:active{transform:scale(.98)}
 input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover,input[type=search]:hover,input[type=password]:hover,textarea:hover{border-color:var(--a)}
+#smenu{position:fixed;z-index:50;background:var(--bg);border:1px solid var(--b);border-radius:10px;padding:6px;box-shadow:0 10px 28px rgba(0,0,0,.4);max-height:380px;overflow:auto;width:340px;animation:pop .14s ease-out}
+@keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
+#smenu .smh{padding:6px 8px;font-weight:600;color:var(--m);font-size:12px}#smenu label{display:flex;gap:10px;align-items:flex-start;padding:7px 8px;border-radius:6px;cursor:pointer}#smenu label:hover{background:var(--h)}
+#smenu small{display:block;color:var(--m);font-size:11px}#smenu .smn{padding:6px 8px;color:var(--g);font-size:12px;min-height:16px}td{white-space:normal}
 </style></head><body>
 <header><h1>Профили</h1><input id="q" type="search" placeholder="Поиск по профилям…" aria-label="Поиск"><button id="bulk">Импорт списком</button><button class="p" id="new">+ Новый профиль</button></header>
 <section id="form" hidden>
@@ -44,10 +48,9 @@ input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover
 <label class="full"><input type="checkbox" id="ent"> Разрешать сайтам показывать уведомления</label>
 <div class="full"><button id="erp">Сбросить запомненные разрешения сайтов</button></div>
 <div class="full"><b>Скрипты</b></div>
-<div class="full m">Готовые скрипты (включаются галочкой):</div><div id="epr" class="full"></div>
 <label class="full"><input type="checkbox" id="eac"> Автонажатие кнопок на сайтах</label>
 <textarea id="eacr" class="full" rows="3" spellcheck="false" placeholder="Каждая строка: сайт | текст кнопки или CSS-селектор | задержка, мс&#10;Пример: *.example.com | Продолжить | 500"></textarea>
-<div class="full m">Мои скрипты для этого профиля: <button id="esm">Управление скриптами</button></div><div id="esl" class="full"></div>
+<div class="full m">Скрипты этого профиля (из библиотеки): <button id="esm">Открыть библиотеку</button></div><div id="esl" class="full"></div>
 <button class="p" id="esave">Сохранить</button><button id="ecancel">Отмена</button></section>
 <section id="imp" hidden><b class="full">Создать профили списком</b><textarea id="impt" class="full" rows="6" spellcheck="false" placeholder="Каждая строка: Название | прокси&#10;Примеры:&#10;Аккаунт 1 | socks5://user:pass@1.2.3.4:1080&#10;Аккаунт 2 | http://5.6.7.8:8080&#10;Аккаунт 3 (без прокси)"></textarea><button class="p" id="impgo">Создать</button><button id="impx">Отмена</button><span id="impm" class="m"></span></section>
 <section id="chk" hidden><span id="ct"></span><button class="p" id="cgeo" hidden></button><button id="cclose">Закрыть</button></section>

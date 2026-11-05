@@ -48,6 +48,7 @@
  },
  "author": "MultiBrowser",
  "dependencies": {
-  "electron-updater": "6.3.9"
+  "electron-updater": "6.3.9",
+  "@ghostery/adblocker": "2.12.5"
  }
 }
