@@ -1,5 +1,5 @@
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src data:">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
 <title>Настройки</title>
 <style>
 :root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--g:#1a8f5a;--h:#e4e7ef}
@@ -19,7 +19,7 @@ select{appearance:none;-webkit-appearance:none;padding-right:30px;background-ima
 select:hover{background-color:var(--h);border-color:var(--a)}select:focus{border-color:var(--a);box-shadow:0 0 0 3px color-mix(in srgb,var(--a) 22%,transparent)}select:active{transform:scale(.98)}
 input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover,input[type=search]:hover,input[type=password]:hover,textarea:hover{border-color:var(--a)}
 </style></head><body><main>
-<h1>Настройки <span id="ok"></span></h1>
+<h1><img src="logo.png" alt="" width="26" height="26" style="vertical-align:-6px;margin-right:8px">Настройки <span id="ok"></span></h1>
 <h2>ПОИСК И СТАРТ</h2>
 <div class="r"><label for="search">Поисковая система</label><select id="search"><option value="google">Google</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option></select></div>
 <div class="r"><label for="translateTo">Переводить страницы на</label><select id="translateTo"><option value="ru">Русский</option><option value="en">Английский</option><option value="uk">Украинский</option><option value="de">Немецкий</option><option value="fr">Французский</option><option value="es">Испанский</option><option value="it">Итальянский</option><option value="pl">Польский</option><option value="tr">Турецкий</option><option value="zh-CN">Китайский</option></select></div>
@@ -38,6 +38,7 @@ input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover
 <div class="r"><label for="dlToast">Всплывающее окно и анимация при начале загрузки</label><input type="checkbox" id="dlToast"></div>
 <div class="r"><div>Папка загрузок по умолчанию<span class="m" id="ddv"></span></div><div><button id="dd">Выбрать…</button> <button id="ddr">Сбросить</button></div></div>
 <h2>ЗАПУСК И ОБНОВЛЕНИЯ</h2>
+<div class="r"><div>Версия Chrome для сайтов<span class="m">Пусто = версия движка. Если сайт пишет «устаревший браузер», укажи, например, 150</span></div><input type="text" id="uaVersion" size="6"></div>
 <div class="r"><label for="openBg">Открывать новые вкладки из меню и по Ctrl+клику в фоне (не переключаться на них)</label><input type="checkbox" id="openBg"></div>
 <div class="r"><label for="restore">Восстанавливать вкладки и профили при запуске</label><input type="checkbox" id="restore"></div>
 <div class="r"><label for="autoUpdate">Автоматически проверять обновления</label><input type="checkbox" id="autoUpdate"></div>

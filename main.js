@@ -1,5 +1,5 @@
 // MultiBrowser: своя оболочка (вкладки разных аккаунтов в одном окне) + усиленный режим (движок fingerprint-chromium отдельным окном)
-const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen,clipboard,webContents}=require('electron');
+const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen,clipboard,webContents,Notification}=require('electron');
 const path=require('path'),fs=require('fs'),net=require('net'),crypto=require('crypto');
 const {spawn,spawnSync}=require('child_process');
 const {autoUpdater}=require('electron-updater');
@@ -8,7 +8,7 @@ const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
 try{let sd='force';try{sd=JSON.parse(fs.readFileSync(SETF(),'utf8')).siteDark||'force'}catch{}if(sd==='force')app.commandLine.appendSwitch('enable-features','WebContentsForceDark')}catch{}   // сайты по умолчанию в тёмной теме
 try{app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion,IntensiveWakeUpThrottling');['disable-renderer-backgrounding','disable-background-timer-throttling','disable-backgrounding-occluded-windows'].forEach(x=>app.commandLine.appendSwitch(x))}catch{}   // страницы не уходят в экономный режим
-const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,ver:2};
+const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,uaVersion:'',ver:2};
 const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q='};
 let cfg={...DEF},manual=false;
 const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}
@@ -20,7 +20,7 @@ const searchUrl=()=>ENG[cfg.search]||ENG.google;
 const PAGES={extensions:{file:'ui/extensions.html',pid:'_ext',title:'Расширения',icon:'⧉'},scripts:{file:'ui/scripts.html',pid:'_sc',title:'Скрипты',icon:'⚡'},bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map();
 const hooked=new Set(),live=new Map(),closedTabs=[];
-let menuW=270,suggestSel=-1,scripts=[],dlRect=null,toastV=null,toastOpen=false,toastId=null,toastT=null,toastHover=false,flyV=null,menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
+let menuAlts=new Map(),menuW=270,suggestSel=-1,scripts=[],dlRect=null,toastV=null,toastOpen=false,toastId=null,toastT=null,toastHover=false,flyV=null,menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
 const LOG=()=>path.join(app.getPath('userData'),'log.txt');
 const log=m=>{try{fs.appendFileSync(LOG(),new Date().toISOString()+' '+m+'\n')}catch{}};
 let win=null,tabs=[],active=null,mode='top',curW=null,overlayW=null,nextId=1,restoring=true,quitting=false,saveT=null,started=false;
@@ -119,16 +119,19 @@ function fadeTo(v,ms){
 }
 const langsOf=l=>l?`${l},${l.split('-')[0]};q=0.9`:'';
 const CHR=(process.versions&&process.versions.chrome)||'130.0.0.0',CMAJ=CHR.split('.')[0];
-const UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/'+CMAJ+'.0.0.0 Safari/537.36';
+const uaMajor=()=>{const v=parseInt(cfg.uaVersion);return v>=100&&v<=300?v:+CMAJ};
+const uaStr=()=>'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/'+uaMajor()+'.0.0.0 Safari/537.36';
 const pageBg=()=>(cfg.siteDark==='force'&&nativeTheme.shouldUseDarkColors)?'#12151c':'#ffffff';
 function applyGeo(wc,p){   // обычный user-agent и client hints Chrome (без «Electron»), часовой пояс и язык профиля
  try{wc.debugger.attach('1.3')}catch{}
  const send=(m,pr)=>{try{return wc.debugger.sendCommand(m,pr).catch(()=>{})}catch{}};
- const meta={brands:[{brand:'Chromium',version:CMAJ},{brand:'Google Chrome',version:CMAJ},{brand:'Not_A Brand',version:'24'}],fullVersionList:[{brand:'Chromium',version:CHR},{brand:'Google Chrome',version:CHR},{brand:'Not_A Brand',version:'24.0.0.0'}],platform:'Windows',platformVersion:'10.0.0',architecture:'x86',model:'',mobile:false,bitness:'64',wow64:false};
- send('Emulation.setUserAgentOverride',{userAgent:UA,platform:'Win32',...(p.lang?{acceptLanguage:langsOf(p.lang)}:{}),userAgentMetadata:meta});
+ const M=uaMajor(),FV=M===+CMAJ?CHR:M+'.0.0.0',meta={brands:[{brand:'Chromium',version:String(M)},{brand:'Google Chrome',version:String(M)},{brand:'Not_A Brand',version:'24'}],fullVersionList:[{brand:'Chromium',version:FV},{brand:'Google Chrome',version:FV},{brand:'Not_A Brand',version:'24.0.0.0'}],platform:'Windows',platformVersion:'10.0.0',architecture:'x86',model:'',mobile:false,bitness:'64',wow64:false};
+ send('Emulation.setUserAgentOverride',{userAgent:uaStr(),platform:'Win32',...(p.lang?{acceptLanguage:langsOf(p.lang)}:{}),userAgentMetadata:meta});
  if(p.tz)send('Emulation.setTimezoneOverride',{timezoneId:p.tz});
  if(p.lang)send('Emulation.setLocaleOverride',{locale:p.lang});
  send('Page.enable');send('Page.addScriptToEvaluateOnNewDocument',{source:'if(!window.chrome)window.chrome={runtime:{}};'});
+ send('Runtime.addBinding',{name:'mbNotify'});
+ if(!wc.__mbDbg){wc.__mbDbg=true;try{wc.debugger.on('message',(ev,method,params)=>{if(method==='Runtime.bindingCalled'&&params&&params.name==='mbNotify')notifyMsg(wc,params.payload)})}catch{}}
 }
 const topH=()=>(mode==='side'?42:82)+(cfg.bmBar?30:0);
 function layout(){
@@ -153,7 +156,7 @@ async function newTab(pid,url,bg,afterId){
  const p=prof(pid);if(!p)return null;
  const W=curW;
  const part=W.incognito?'inc-'+W.uid+'-'+pid:'persist:p-'+pid,ses=session.fromPartition(part);hookDownloads(ses,pid,part);adblockSession(ses,pid,part);permSession(ses,pid,part);
- try{ses.setUserAgent(UA)}catch{}
+ try{ses.setUserAgent(uaStr())}catch{}
  try{const sl=(ses.availableSpellCheckerLanguages||[]).filter(l=>/^(ru|en-US)$/.test(l));if(sl.length)ses.setSpellCheckerLanguages(sl)}catch{}   // у каждого профиля свои куки, кэш и хранилище
  let vpn=false;
  try{
@@ -170,7 +173,7 @@ async function newTab(pid,url,bg,afterId){
  const wc=v.webContents;
  v.setBackgroundColor(pageBg());try{wc.setBackgroundThrottling(false)}catch{}
  const on=(ev,fn)=>wc.on(ev,(...a)=>{if(useW(t.W))fn(...a)}),once=(ev,fn)=>wc.once(ev,(...a)=>{if(useW(t.W))fn(...a)});
- on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;userDocStart(t,u);adCosmetics(t,u)}});
+ on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;userDocStart(t,u);adCosmetics(t,u);notifyDoc(t,u)}});
  on('context-menu',(e,pr)=>ctxMenu(t,pr));
  const au=()=>{const a=wc.isCurrentlyAudible(),m=wc.isAudioMuted();if(t.audible!==a||t.muted!==m){t.audible=a;t.muted=m;if(useW(t.W))pushTabs()}};
  on('audio-state-changed',au);on('media-started-playing',au);on('media-paused',au);
@@ -351,7 +354,7 @@ function addHistory(pid,url){
  const h={id:uid(),pid,url,title:'',t:Date.now()};history.unshift(h);if(history.length>5000)history.length=5000;saveHistSoon();return h;
 }
 function pushBm(){
- const st={list:bookmarks.map(b=>({id:b.id,title:b.title,url:b.url})),bar:!!cfg.bmBar};
+ const st={list:bookmarks.map(b=>({id:b.id,title:b.title,url:b.url,folder:b.folder||''})),bar:!!cfg.bmBar};
  for(const W of windows){if(W.dead)continue;if(!W.win.webContents.isDestroyed())W.win.webContents.send('bm-state',st);
   for(const t of W.tabs)if(t.kind==='bookmarks'&&!t.view.webContents.isDestroyed())t.view.webContents.send('bm-changed')}
 }
@@ -373,8 +376,8 @@ function menuBounds(w,h){const b=win.getContentBounds(),a=menuAnchor||{x:12,y:44
  const hh=Math.max(60,Math.min(h,b.height-20,460));let y=a.y;if(y+hh>b.height-8)y=Math.max(8,b.height-hh-8);
  return{x,y,width:w,height:hh}}
 function showMenu(items,anchor,opts={}){
- hidePanel();hideToast();menuActs=new Map();
- const out=items.map((it,i)=>{const {fn,...r}=it;if(fn){r.id='a'+i;menuActs.set(r.id,fn)}return r});
+ hidePanel();hideToast();menuActs=new Map();menuAlts=new Map();
+ const out=items.map((it,i)=>{const {fn,alt,...r}=it;if(fn){r.id='a'+i;menuActs.set(r.id,fn);if(alt){r.alt=true;menuAlts.set(r.id,alt)}}return r});
  menuPayload={items:out,search:!!opts.search,placeholder:opts.placeholder||'',suggest:!!opts.suggest};menuW=opts.width||270;menuAnchor=anchor||cursorAnchor();
  if(!menuV){menuV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});menuV.webContents.loadFile('ui/menu.html');
   menuV.webContents.on('blur',()=>{if(menuOpen&&Date.now()-menuShownAt>200){hideMenu();lastMenuBlur=Date.now()}});
@@ -847,7 +850,97 @@ async function extInstall(input){
 async function loadExts(ses,p,part){
  let m=extLoaded.get(part);if(!m){m=new Map();extLoaded.set(part,m)}
  for(const id of p.exts||[]){if(m.has(id))continue;const dir=path.join(EXD(),id);if(!fs.existsSync(dir))continue;
-  try{m.set(id,await ses.loadExtension(dir,{allowFileAccess:true}))}catch(e){log('extension '+id+': '+e.message)}}
+  try{m.set(id,await (ses.extensions||ses).loadExtension(dir,{allowFileAccess:true}))}catch(e){log('extension '+id+': '+e.message)}}
+}
+
+// ---------- уведомления сайтов: запрос разрешения и показ через Windows ----------
+function notifyState(p,url){if(p.notify===false)return 'denied';let o='';try{o=new URL(url).origin}catch{}const v=(p.notifyPerms||{})[o];return v===true?'granted':v===false?'denied':'default'}
+function notifyShim(state,origin){return `(()=>{if(window.__mbN)return;window.__mbN=1;
+ const BAKED=${JSON.stringify(state)},BO=${JSON.stringify(origin)};let perm=location.origin===BO?BAKED:'default';
+ const send=o=>{try{window.mbNotify(JSON.stringify(o))}catch(e){}};window.__mbPermCb={};window.__mbNotes={};let nid=0;
+ class N extends EventTarget{
+  constructor(title,o){super();o=o||{};this.title=String(title);this.body=o.body||'';this.tag=o.tag||'';this.icon=o.icon||'';this.data=o.data;this.onclick=null;this.onshow=null;this.onclose=null;this.onerror=null;
+   const id=++nid;this.__id=id;window.__mbNotes[id]=this;
+   if(perm==='granted'){send({t:'show',id,title:this.title,body:this.body});setTimeout(()=>{const e=new Event('show');this.dispatchEvent(e);if(this.onshow)this.onshow(e)},0)}
+   else setTimeout(()=>{const e=new Event('error');this.dispatchEvent(e);if(this.onerror)this.onerror(e)},0)}
+  close(){delete window.__mbNotes[this.__id]}
+  static get permission(){return perm}
+  static get maxActions(){return 0}
+  static requestPermission(cb){return new Promise(res=>{if(perm!=='default'){if(cb)cb(perm);res(perm);return}
+   const id=Math.random().toString(36).slice(2);window.__mbPermCb[id]=r=>{perm=r;if(cb)cb(r);res(r)};send({t:'ask',id})})}}
+ try{Object.defineProperty(window,'Notification',{value:N,configurable:true,writable:true})}catch(e){}
+ try{const q=navigator.permissions&&navigator.permissions.query.bind(navigator.permissions);if(q)navigator.permissions.query=d=>(d&&d.name==='notifications')?Promise.resolve({state:perm==='default'?'prompt':perm,onchange:null,addEventListener(){},removeEventListener(){}}):q(d)}catch(e){}
+ try{if(window.ServiceWorkerRegistration)ServiceWorkerRegistration.prototype.showNotification=function(t,o){o=o||{};if(perm==='granted')send({t:'show',id:0,title:String(t),body:o.body||''});return Promise.resolve()}}catch(e){}
+})();`}
+function tabByWc(wc){for(const W of windows)for(const t of W.tabs)if(!t.kind&&t.view.webContents===wc)return t;return null}
+function notifyDoc(t,url){const p=prof(t.pid);if(!p||!/^https?:/i.test(url))return setDocScript(t,'notify',null);let o='';try{o=new URL(url).origin}catch{}return setDocScript(t,'notify',notifyShim(notifyState(p,url),o))}
+const notifyRate=new Map();
+async function notifyMsg(wc,payload){
+ let m;try{m=JSON.parse(payload)}catch{return}const t=tabByWc(wc);if(!t)return;const p=prof(t.pid);if(!p)return;
+ let origin='';try{origin=new URL(wc.getURL()).origin}catch{}
+ if(m.t==='ask'){
+  let ans='denied';
+  if(p.notify!==false){const saved=(p.notifyPerms||{})[origin];
+   if(saved!==undefined)ans=saved?'granted':'denied';
+   else{const r=await appDialog({title:'Уведомления',message:origin.replace(/^https?:\/\//,'')+' просит разрешение показывать уведомления',detail:'Профиль: '+p.name+'. Решение запомнится для этого сайта.',buttons:['Разрешить','Блокировать'],defaultId:0,cancelId:1,type:'question'});
+    ans=r.response===0?'granted':'denied';const l=load(),q=l.find(x=>x.id===t.pid);if(q){q.notifyPerms=q.notifyPerms||{};q.notifyPerms[origin]=ans==='granted';save(l)}}}
+  const idj=JSON.stringify(String(m.id));
+  try{await wc.executeJavaScript('window.__mbPermCb&&window.__mbPermCb['+idj+']&&window.__mbPermCb['+idj+']('+JSON.stringify(ans)+')')}catch{}
+ }else if(m.t==='show'){
+  if(notifyState(p,wc.getURL())!=='granted')return;
+  const now=Date.now(),r=(notifyRate.get(wc.id)||[]).filter(x=>now-x<10000);if(r.length>=5)return;r.push(now);notifyRate.set(wc.id,r);
+  try{const n=new Notification({title:String(m.title||'').slice(0,120),body:String(m.body||'').slice(0,400)});
+   n.on('click',()=>{if(t.W&&!t.W.dead){focusTab(t.W,t);if(m.id)wc.executeJavaScript('(()=>{const n=window.__mbNotes&&window.__mbNotes['+Number(m.id)+'];if(n){const e=new Event("click");n.dispatchEvent(e);if(n.onclick)n.onclick(e)}})()').catch(()=>{})}});
+   n.show()}catch(e){log('notify: '+e.message)}
+ }
+}
+
+// ---------- закладки: менеджер, папки, импорт и экспорт ----------
+function parseBookmarksHtml(html){
+ const out=[],stack=[];let pending='';
+ const re=/<(\/?)DL[^>]*>|<H3[^>]*>([\s\S]*?)<\/H3>|<A\s[^>]*?HREF="([^"]*)"[^>]*>([\s\S]*?)<\/A>/gi;let m;
+ const dec=x=>x.replace(/<[^>]*>/g,'').replace(/&amp;/g,'&').replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&quot;/g,'"').replace(/&#39;/g,"'").trim();
+ while((m=re.exec(html))){
+  const tag=m[0].toLowerCase();
+  if(tag.startsWith('<dl')||tag.startsWith('</dl')){if(m[1])stack.pop();else{stack.push(pending);pending=''}}
+  else if(m[2]!==undefined)pending=dec(m[2]);
+  else if(m[3]!==undefined){const url=m[3].replace(/&amp;/g,'&');if(!/^(https?|file):/i.test(url))continue;
+   let f=stack.filter(Boolean).pop()||'';if(/^(bookmarks bar|панель закладок|закладки)$/i.test(f))f='';
+   out.push({title:dec(m[4])||url,url,folder:f})}
+ }
+ return out;
+}
+function bookmarksHtml(){
+ const esc=x=>String(x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'),by={};
+ for(const b of bookmarks)(by[b.folder||'']=by[b.folder||'']||[]).push(b);
+ const line=b=>'    <DT><A HREF="'+esc(b.url)+'" ADD_DATE="'+Math.floor((b.t||Date.now())/1000)+'">'+esc(b.title||b.url)+'</A>\n';
+ let h='<!DOCTYPE NETSCAPE-Bookmark-file-1>\n<META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=UTF-8">\n<TITLE>Bookmarks</TITLE>\n<H1>Bookmarks</H1>\n<DL><p>\n';
+ for(const b of by['']||[])h+=line(b);
+ for(const f of Object.keys(by).filter(Boolean)){h+='    <DT><H3>'+esc(f)+'</H3>\n    <DL><p>\n';for(const b of by[f])h+='  '+line(b);h+='    </DL><p>\n'}
+ return h+'</DL><p>\n';
+}
+function openTabNear(url,bg){const t=cur();if(t&&!t.kind)newTab(t.pid,url,!!bg,t.id);else openUrl(url)}
+
+// ---------- несколько выбранных вкладок ----------
+function detachTabs(ids){
+ const sel=ids.map(id=>tabs.find(t=>t.id===id)).filter(Boolean);if(!sel.length||tabs.length<=sel.length)return;
+ const pt=screen.getCursorScreenPoint(),src=curW;
+ for(const t of sel){const i=tabs.indexOf(t);if(i>=0)tabs.splice(i,1);try{win.contentView.removeChildView(t.view)}catch{}}
+ if(!tabs.some(t=>t.id===active))setActive(tabs[0].id);layout();pushTabs();
+ const W2=createWindow({bounds:{x:Math.round(pt.x-220),y:Math.round(pt.y-18),width:1100,height:760},instant:true});
+ W2.mode=src.mode;for(const t of sel){t.W=W2;W2.tabs.push(t)}W2.active=sel[0].id;useW(W2);for(const t of sel)W2.win.contentView.addChildView(t.view);layout();pushTabs();
+}
+function tabsAction(ids,action){
+ const ts=(ids||[]).map(id=>tabs.find(t=>t.id===id)).filter(Boolean);if(!ts.length)return;
+ if(action==='close'){for(const t of ts)closeTab(t.id)}
+ else if(action==='window')detachTabs(ts.map(t=>t.id));
+ else if(action==='pin'){const on=!ts.every(t=>t.pinned);for(const t of ts)t.pinned=on;const pin=tabs.filter(x=>x.pinned),rest=tabs.filter(x=>!x.pinned);tabs.splice(0,tabs.length,...pin,...rest);pushTabs()}
+ else if(action==='mute'){const pg=ts.filter(t=>!t.kind),on=!pg.every(t=>t.view.webContents.isAudioMuted());for(const t of pg){t.view.webContents.setAudioMuted(on);t.muted=on}pushTabs()}
+ else if(action==='reload'){for(const t of ts)if(!t.kind)t.view.webContents.reload()}
+ else if(action==='duplicate'){for(const t of ts)if(!t.kind)newTab(t.pid,t.view.webContents.getURL()||t.url,true,t.id)}
+ else if(action==='bookmark'){const fname='Вкладки '+new Date().toLocaleDateString('ru-RU');
+  for(const t of ts){if(t.kind)continue;const u=t.view.webContents.getURL()||t.url;if(!/^(https?|file):/i.test(u)||bookmarks.some(b=>b.url===u&&(b.folder||'')===fname))continue;bookmarks.push({id:uid(),title:t.title||u,url:u,folder:fname,t:Date.now()})}
+  saveBm();pushBm();pushTabs()}
 }
 
 // ---------- IPC ----------
@@ -934,7 +1027,7 @@ H('histClear',()=>{history=[];saveHistNow()});
 H('showMenu',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;mainMenu(a)});
 H('menuGet',()=>menuPayload);
 H('menuResize',(e,h)=>{if(menuOpen&&menuV)menuV.setBounds(menuBounds(menuW,h))});
-H('menuPick',(e,id)=>{const f=menuActs.get(id);hideMenu();if(f)setTimeout(f,0)});
+H('menuPick',(e,arg)=>{const id=typeof arg==='string'?arg:(arg&&arg.id),mid=!!(arg&&typeof arg==='object'&&arg.mid),f=(mid&&menuAlts.get(id))||menuActs.get(id);hideMenu();if(f)setTimeout(f,0)});
 H('checkConn',(e,id)=>checkConn(id));
 H('applyGeo',(e,{id,tz,lang})=>{const l=load(),p=l.find(x=>x.id===id);if(!p)return false;if(tz)p.tz=tz;else delete p.tz;if(lang)p.lang=lang;else delete p.lang;save(l);pushMgr();return true});
 H('toastGet',()=>toastItem());
@@ -975,7 +1068,7 @@ H('importProfiles',(e,text)=>{const l=load(),bad=[];let n=0;
    catch{bad.push(line);continue}}
   l.push(p);n++}
  save(l);pushMgr();pushTabs();return{n,bad}});
-H('resetPerms',(e,id)=>{const l=load(),p=l.find(x=>x.id===id);if(p){delete p.perms;save(l)}return true});
+H('resetPerms',(e,id)=>{const l=load(),p=l.find(x=>x.id===id);if(p){delete p.perms;delete p.notifyPerms;save(l)}return true});
 H('translatePage',()=>{const t=cur();if(t)translateToggle(t)});
 H('dragStart',(e,{id,x,y,gx,gy})=>{
  const i=tabs.findIndex(t=>t.id===id);if(i<0)return false;const src=curW,t=tabs[i],sb=src.win.getBounds();
@@ -999,8 +1092,8 @@ H('dragEnd',(e,{x,y})=>{
 H('tabSearch',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;tabSearch(a)});
 H('muteTab',(e,id)=>{const t=tabs.find(x=>x.id===id);if(!t||t.kind)return;const w=t.view.webContents;w.setAudioMuted(!w.isAudioMuted());t.muted=w.isAudioMuted();pushTabs()});
 H('navMenu',(e,{dir,anchor})=>{const w=pageWc();if(!w)return;const nh=w.navigationHistory,ents=nh.getAllEntries(),ai=nh.getActiveIndex(),items=[];
- if(dir==='back'){for(let i=ai-1;i>=0;i--)items.push({label:ents[i].title||ents[i].url,tag:hostOf(ents[i].url),fn:()=>nh.goToIndex(i)})}
- else{for(let i=ai+1;i<ents.length;i++)items.push({label:ents[i].title||ents[i].url,tag:hostOf(ents[i].url),fn:()=>nh.goToIndex(i)})}
+ if(dir==='back'){for(let i=ai-1;i>=0;i--)items.push({label:ents[i].title||ents[i].url,tag:hostOf(ents[i].url),fn:()=>nh.goToIndex(i),alt:()=>openTabNear(ents[i].url,true)})}
+ else{for(let i=ai+1;i<ents.length;i++)items.push({label:ents[i].title||ents[i].url,tag:hostOf(ents[i].url),fn:()=>nh.goToIndex(i),alt:()=>openTabNear(ents[i].url,true)})}
  if(items.length)showMenu(items.slice(0,15),anchor,{width:340})});
 H('suggest',(e,{q,anchor})=>{
  q=String(q||'').trim();if(!q){if(menuOpen&&menuPayload.suggest)hideMenu();return}
@@ -1015,14 +1108,30 @@ H('suggestHide',()=>{if(menuOpen&&menuPayload.suggest)hideMenu()});
 H('extList',()=>({exts:extList(),profiles:load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),enabled:p.exts||[]}))}));
 H('extInstall',async(e,input)=>{try{return{ok:true,id:await extInstall(input)}}catch(x){return{error:x.message}}});
 H('extToggle',async(e,{id,pid,on})=>{const l=load(),p=l.find(x=>x.id===pid);if(!p)return false;const set=new Set(p.exts||[]);if(on)set.add(id);else set.delete(id);p.exts=[...set];save(l);
- if(!on){const part='persist:p-'+pid,m=extLoaded.get(part),ex=m&&m.get(id);if(ex){try{await session.fromPartition(part).removeExtension(ex.id)}catch{}m.delete(id)}}
+ if(!on){const part='persist:p-'+pid,m=extLoaded.get(part),ex=m&&m.get(id);if(ex){try{await (()=>{const x=session.fromPartition(part);return (x.extensions||x).removeExtension(ex.id)})()}catch{}m.delete(id)}}
  reloadProfileTabs(pid);return true});
 H('extRemove',async(e,id)=>{
- for(const [part,m] of extLoaded){const ex=m.get(id);if(ex){try{await session.fromPartition(part).removeExtension(ex.id)}catch{}m.delete(id)}}
+ for(const [part,m] of extLoaded){const ex=m.get(id);if(ex){try{await (()=>{const x=session.fromPartition(part);return (x.extensions||x).removeExtension(ex.id)})()}catch{}m.delete(id)}}
  const l=load();for(const p of l)if(p.exts)p.exts=p.exts.filter(x=>x!==id);save(l);try{fs.rmSync(path.join(EXD(),id),{recursive:true,force:true})}catch{}return true});
 H('moveTab',(e,{id,to})=>{const i=tabs.findIndex(x=>x.id===id);if(i<0)return;const [t]=tabs.splice(i,1);tabs.splice(Math.max(0,Math.min(to,tabs.length)),0,t);pushTabs()});
 H('detachTab',(e,{id,x,y})=>detachTab(id,x,y));
-H('tabMenu',(e,{id,anchor})=>{
+H('tabsAction',(e,{ids,action})=>tabsAction(ids,action));
+H('bmSave',(e,{id,title,url,folder})=>{const b=bookmarks.find(x=>x.id===id);if(!b)return false;if(title&&title.trim())b.title=title.trim();if(url&&/^(https?|file):/i.test(url.trim()))b.url=url.trim();b.folder=String(folder||'').trim().slice(0,60);saveBm();pushBm();pushTabs();return true});
+H('bmAdd',(e,{title,url,folder})=>{url=String(url||'').trim();if(!/^(https?|file):/i.test(url))return{error:'Нужна ссылка вида https://…'};bookmarks.push({id:uid(),title:String(title||'').trim()||url,url,folder:String(folder||'').trim().slice(0,60),t:Date.now()});saveBm();pushBm();pushTabs();return{ok:true}});
+H('bmDelete',(e,ids)=>{const set=new Set(ids||[]);bookmarks=bookmarks.filter(b=>!set.has(b.id));saveBm();pushBm();pushTabs();return true});
+H('bmMove',(e,{ids,folder})=>{const set=new Set(ids||[]),f=String(folder||'').trim().slice(0,60);for(const b of bookmarks)if(set.has(b.id))b.folder=f;saveBm();pushBm();return true});
+H('bmExport',async()=>{const r=await dialog.showSaveDialog(win,{defaultPath:'bookmarks.html',filters:[{name:'Закладки (HTML)',extensions:['html']}]});if(r.canceled||!r.filePath)return{canceled:true};fs.writeFileSync(r.filePath,bookmarksHtml());return{ok:true,n:bookmarks.length}});
+H('bmImport',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'Закладки (HTML)',extensions:['html','htm']}],properties:['openFile']});if(r.canceled||!r.filePaths||!r.filePaths[0])return{canceled:true};
+ const items=parseBookmarksHtml(fs.readFileSync(r.filePaths[0],'utf8')),have=new Set(bookmarks.map(b=>b.url+'|'+(b.folder||'')));let n=0;
+ for(const b of items){const k=b.url+'|'+b.folder;if(have.has(k))continue;have.add(k);bookmarks.push({id:uid(),title:b.title,url:b.url,folder:b.folder,t:Date.now()});n++}
+ saveBm();pushBm();return{ok:true,n}});
+H('bmChipMenu',(e,{id,anchor})=>{const b=bookmarks.find(x=>x.id===id);if(!b)return;
+ showMenu([{label:'Открыть',fn:()=>navTo(b.url)},{label:'Открыть в новой вкладке',fn:()=>openTabNear(b.url,false)},{label:'Открыть в фоновой вкладке',fn:()=>openTabNear(b.url,true)},{label:'Открыть в профиле…',fn:()=>profileMenu(null,b.url)},{type:'sep'},{label:'Изменить в менеджере закладок',fn:()=>openPage('bookmarks')},{label:'Удалить закладку',fn:()=>{bookmarks=bookmarks.filter(x=>x.id!==id);saveBm();pushBm();pushTabs()}}],anchor||cursorAnchor())});
+H('bmFolderMenu',(e,{name,anchor})=>{const items=bookmarks.filter(b=>(b.folder||'')===name).map(b=>({label:b.title||b.url,tag:hostOf(b.url),fn:()=>navTo(b.url),alt:()=>openTabNear(b.url,true)}));
+ if(items.length)showMenu(items,anchor,{width:340})});
+H('tabMenu',(e,{id,anchor,ids})=>{
+ if(ids&&ids.length>1&&ids.includes(id)){const n=ids.length;
+  showMenu([{label:'Выбрано вкладок: '+n,type:'header'},{label:'Обновить',fn:()=>tabsAction(ids,'reload')},{label:'Дублировать',fn:()=>tabsAction(ids,'duplicate')},{label:'Закрепить / открепить',fn:()=>tabsAction(ids,'pin')},{label:'Отключить / включить звук',fn:()=>tabsAction(ids,'mute')},{label:'Добавить в закладки (в папку)',fn:()=>tabsAction(ids,'bookmark')},{label:'Открыть в новом окне',fn:()=>tabsAction(ids,'window')},{type:'sep'},{label:'Закрыть выбранные ('+n+')',hint:'Delete',fn:()=>tabsAction(ids,'close')}],anchor||cursorAnchor());return}
  const t=tabs.find(x=>x.id===id);if(!t)return;const i=tabs.indexOf(t),items=[];
  if(!t.kind)items.push({label:'Обновить',fn:()=>t.view.webContents.reload()},{label:'Дублировать',fn:()=>newTab(t.pid,t.view.webContents.getURL()||t.url,false,t.id)},{label:t.pinned?'Открепить вкладку':'Закрепить вкладку',fn:()=>pinTab(id)},{label:t.muted?'Включить звук вкладки':'Отключить звук вкладки',fn:()=>{const w=t.view.webContents;w.setAudioMuted(!w.isAudioMuted());t.muted=w.isAudioMuted();pushTabs()}});
  if(tabs.length>1)items.push({label:'Открыть в новом окне',fn:()=>{const pt=screen.getCursorScreenPoint();detachTab(id,pt.x,pt.y)}});

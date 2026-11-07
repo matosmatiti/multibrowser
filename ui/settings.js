@@ -15,5 +15,6 @@ async function init(){const c=await api.getSettings();
  for(const k of ['restore','autoUpdate','bmBar','keepHistory','dlToast','adblock','openBg'])$(k).onchange=()=>save({[k]:$(k).checked});
  const adShow=async()=>{const i=await api.adInfo();$('adv').textContent=(i.engine?'Усиленный режим (фильтры EasyList и uBlock). ':'Базовый режим (список доменов). ')+i.domains+' доменов'+(i.updated?', обновлено '+new Date(i.updated).toLocaleDateString('ru-RU'):'')};adShow();
  $('adu').onclick=async()=>{$('adu').disabled=true;$('adu').textContent='Обновляю…';await api.adUpdate();$('adu').disabled=false;$('adu').textContent='Обновить сейчас';adShow();flash()};
+ $('uaVersion').value=c.uaVersion||'';$('uaVersion').onchange=()=>save({uaVersion:$('uaVersion').value.trim()});
  $('chk').onclick=()=>api.checkUpdates();$('log').onclick=()=>api.showLog()}
 init();

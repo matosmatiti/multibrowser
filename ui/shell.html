@@ -59,6 +59,7 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 .au{width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;flex:none;color:var(--a)}.au svg{width:14px;height:14px}.au:hover{background:var(--b)}
 .tab.pin{width:42px;padding:0 6px;justify-content:center}.tab.pin .ttl,.tab.pin .x,.tab.pin .au{display:none}.tab.aud .dot{box-shadow:0 0 0 2px var(--a)}
 #incb{background:#4b3a75;color:#fff;border-radius:10px;padding:1px 10px;font-size:12px;white-space:nowrap}body.inc{--p:#2b2140}body.inc #top{background:#2b2140}
+.tab.sel{background:color-mix(in srgb,var(--a) 24%,transparent);outline:1px solid var(--a);outline-offset:-1px}.bm.fd{font-weight:600}
 </style></head><body>
 <div id="top"><div id="tabs"></div><button id="plus" class="ib" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button id="tsearch" class="ib" title="Поиск по вкладкам (Ctrl+Shift+A)" aria-label="Поиск по вкладкам"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg></button><div id="grab"></div></div>
 <div id="side"><div id="brand"></div><div id="groups"></div></div>
@@ -81,5 +82,5 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 <div id="lbar"><i></i></div>
 <div id="updbar" hidden><div></div></div>
 <div id="ph"><div class="sp"></div><div>Открываю страницу…</div></div>
-<div id="empty">Нет открытых вкладок.<br>Нажми «+» и выбери профиль, либо открой «Профили» (значок справа).</div>
+<div id="empty"><img src="logo.png" alt="" width="84" height="84" style="opacity:.92"><div>Нет открытых вкладок.<br>Нажми «+» и выбери профиль, либо открой «Профили» (значок справа).</div></div>
 <script src="shell.js"></script></body></html>

@@ -1,5 +1,5 @@
 const $=i=>document.getElementById(i);
-let S={mode:'top',tabs:[],profiles:[]},BM={list:[],bar:false},seen=new Set(),finding=false,lastA=null,suppress=false,dragging=false,lastKey='',lastBm='';
+let S={mode:'top',tabs:[],profiles:[]},BM={list:[],bar:false},seen=new Set(),finding=false,lastA=null,suppress=false,dragging=false,lastKey='',lastBm='',selected=new Set(),lastSel=null;
 const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
 const XI='<svg viewBox="0 0 24 24"><path d="M7 7l10 10M17 7L7 17"/></svg>',PI='<svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>';
 const anchor=(e,right)=>{const r=e.currentTarget.getBoundingClientRect();return{x:right?r.right:r.left,y:r.bottom+6,align:right?'right':'left'}};
@@ -33,13 +33,16 @@ function startDrag(e,t,d){
  window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
 }
 function tab(t,w){const cmp=w&&w<110&&!t.pinned;
- const d=el('div',null,'tab'+(t.id===S.active?' act':'')+(cmp?' cmp':'')+(t.pinned?' pin':'')+((t.audible&&!t.muted)?' aud':'')+(seen.has(t.id)?'':' new'));d.style.setProperty('--c',t.color);d.title=t.title;
+ const d=el('div',null,'tab'+(t.id===S.active?' act':'')+(cmp?' cmp':'')+(t.pinned?' pin':'')+(selected.has(t.id)?' sel':'')+((t.audible&&!t.muted)?' aud':'')+(seen.has(t.id)?'':' new'));d.style.setProperty('--c',t.color);d.title=t.title;
  d.append(el('span',t.letter,'dot'),el('span',t.title,'ttl'));
  if(t.audible||t.muted){const a=el('button',null,'au');a.innerHTML=t.muted?MUT:SPK;a.title=t.muted?'Включить звук':'Отключить звук';a.onclick=e=>{e.stopPropagation();api.muteTab(t.id)};a.onpointerdown=e=>e.stopPropagation();d.append(a)}
  const x=el('button',null,'x');x.innerHTML=XI;x.title='Закрыть (Ctrl+W)';x.onclick=e=>{e.stopPropagation();api.closeTab(t.id)};d.append(x);
- d.onclick=()=>{if(!suppress)api.activate(t.id)};d.onauxclick=e=>{if(e.button===1)api.closeTab(t.id)};
+ d.onclick=e=>{if(suppress)return;
+  if(e.ctrlKey||e.metaKey){if(selected.has(t.id))selected.delete(t.id);else{if(!selected.size&&S.active!=null)selected.add(S.active);selected.add(t.id)}lastSel=t.id;lastKey='';render();return}
+  if(e.shiftKey&&lastSel!=null){const ids=S.tabs.map(x=>x.id),a=ids.indexOf(lastSel),b=ids.indexOf(t.id);if(a>=0&&b>=0)selected=new Set(ids.slice(Math.min(a,b),Math.max(a,b)+1));lastKey='';render();return}
+  if(selected.size){selected.clear();lastKey='';render()}lastSel=t.id;api.activate(t.id)};d.onauxclick=e=>{if(e.button===1)api.closeTab(t.id)};
  d.onpointerdown=e=>startDrag(e,t,d);
- d.oncontextmenu=e=>{e.preventDefault();api.tabMenu({id:t.id,anchor:{x:e.clientX,y:e.clientY,align:'left'}})};return d}
+ d.oncontextmenu=e=>{e.preventDefault();api.tabMenu({id:t.id,anchor:{x:e.clientX,y:e.clientY,align:'left'},ids:selected.has(t.id)?[...selected]:[]})};return d}
 function render(){
  const side=S.mode==='side',R=document.documentElement.style,w=tabW();document.body.className=S.mode+(S.incognito?' inc':'');
  R.setProperty('--ox',side?'240px':'0px');R.setProperty('--by',(side?42:82)+'px');R.setProperty('--oy',((side?42:82)+(BM.bar?30:0))+'px');R.setProperty('--tw',(w||TMAX)+'px');
@@ -51,10 +54,14 @@ function render(){
  // панель закладок и вкладки перестраиваются только при изменении данных (иначе клики теряются при частых обновлениях)
  const bk=JSON.stringify([BM,S.mode]);
  if(bk!==lastBm){lastBm=bk;const B=$('bmbar');B.hidden=!BM.bar;B.replaceChildren();
-  if(BM.bar){for(const b of BM.list){const x=el('button',b.title||b.url,'bm');x.title=b.url;x.onclick=()=>api.bmOpenBar({url:b.url});
-    x.onauxclick=e=>{if(e.button===1)api.bmOpenBar({url:b.url,newTab:true})};B.append(x)}
+  if(BM.bar){const folders=[...new Set(BM.list.map(b=>b.folder).filter(Boolean))];
+   for(const b of BM.list.filter(b=>!b.folder)){const x=el('button',b.title||b.url,'bm');x.title=b.url;x.onclick=()=>api.bmOpenBar({url:b.url});
+    x.onauxclick=e=>{if(e.button===1){e.preventDefault();api.bmOpenBar({url:b.url,newTab:true})}};
+    x.oncontextmenu=e=>{e.preventDefault();api.bmChipMenu({id:b.id,anchor:{x:e.clientX,y:e.clientY,align:'left'}})};B.append(x)}
+   for(const f of folders){const x=el('button','▾ '+f,'bm fd');x.onclick=e=>{const r=e.currentTarget.getBoundingClientRect();api.bmFolderMenu({name:f,anchor:{x:r.left,y:r.bottom+4,align:'left'}})};B.append(x)}
    if(!BM.list.length)B.append(el('span','Закладок пока нет: нажми ☆ в адресной строке','m'))}}
- const key=JSON.stringify([S.mode,S.active,w,S.tabs.map(t=>[t.id,t.title,t.color,t.letter,t.audible,t.muted,t.pinned]),side?S.profiles:0]);
+ for(const id of [...selected])if(!S.tabs.some(x=>x.id===id))selected.delete(id);
+ const key=JSON.stringify([[...selected],S.mode,S.active,w,S.tabs.map(t=>[t.id,t.title,t.color,t.letter,t.audible,t.muted,t.pinned]),side?S.profiles:0]);
  if(key===lastKey||dragging)return;lastKey=key;
  const T=$('tabs'),G=$('groups');T.replaceChildren();G.replaceChildren();
  if(!side){for(const t of S.tabs)T.append(tab(t,w));const act=T.querySelector('.act');if(act)act.scrollIntoView({block:'nearest',inline:'nearest'})}
@@ -104,3 +111,7 @@ let lastR='';const sendAnchor=()=>{const r=$('dl').getBoundingClientRect(),k=[r.
 api.onDlHit(()=>{const b=$('dl');b.classList.remove('hit');void b.offsetWidth;b.classList.add('hit')});
 window.addEventListener('resize',()=>{render();sendAnchor()});new MutationObserver(sendAnchor).observe(document.body,{attributes:true});
 render();sendAnchor();
+
+document.addEventListener('keydown',e=>{
+ if(e.key==='Delete'&&selected.size&&(document.activeElement===document.body)){api.tabsAction({ids:[...selected],action:'close'});selected.clear();lastKey='';render()}
+ else if(e.key==='Escape'&&selected.size&&document.activeElement===document.body){selected.clear();lastKey='';render()}});

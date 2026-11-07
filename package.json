@@ -8,7 +8,7 @@
   "dist": "electron-builder --win nsis --publish never"
  },
  "devDependencies": {
-  "electron": "33.2.1",
+  "electron": "44.7.0",
   "electron-builder": "25.1.8"
  },
  "build": {

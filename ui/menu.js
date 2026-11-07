@@ -11,7 +11,8 @@ function render(d,keep){
   if(it.color){const c=el('span',it.letter||'','dot');c.style.background=it.color;r.append(c)}
   else if(it.checked!==undefined)r.append(el('span',it.checked?'✓':'','chk'));
   r.append(el('span',it.label,'lb'));if(it.tag||it.hint)r.append(el('span',it.tag||it.hint,'hint'));
-  if(it.id){if(d.suggest)r.onmousedown=e=>{e.preventDefault();api.menuPick(it.id)};else r.onclick=()=>api.menuPick(it.id)}
+  if(it.id){if(d.suggest)r.onmousedown=e=>{e.preventDefault();api.menuPick(it.id)};else r.onclick=e=>api.menuPick((e.ctrlKey&&it.alt)?{id:it.id,mid:true}:it.id)}
+  if(it.alt&&!d.suggest){r.onmousedown=e=>{if(e.button===1)e.preventDefault()};r.onauxclick=e=>{if(e.button===1){e.preventDefault();api.menuPick({id:it.id,mid:true})}}}
   L.append(r)}
  sel=-1;const b=$('box');b.classList.remove('pop');if(!d.suggest){void b.offsetWidth;b.classList.add('pop')}
  requestAnimationFrame(()=>api.menuResize(($('s').hidden?0:$('s').offsetHeight+12)+L.offsetHeight+10));
