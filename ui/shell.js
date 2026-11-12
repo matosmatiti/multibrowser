@@ -32,9 +32,10 @@ function startDrag(e,t,d){
   suppress=true;setTimeout(()=>{suppress=false},0)}
  window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
 }
+function setDot(d,icon,fb){if(icon&&icon.startsWith('img:')){d.textContent='';d.style.background='transparent';const im=document.createElement('img');im.src=icon.slice(4);d.append(im)}else if(icon&&icon.startsWith('emoji:'))d.textContent=icon.slice(6);else d.textContent=icon||fb}
 function tab(t,w){const cmp=w&&w<110&&!t.pinned;
  const d=el('div',null,'tab'+(t.id===S.active?' act':'')+(cmp?' cmp':'')+(t.pinned?' pin':'')+(selected.has(t.id)?' sel':'')+((t.audible&&!t.muted)?' aud':'')+(seen.has(t.id)?'':' new'));d.style.setProperty('--c',t.color);d.title=t.title;
- d.append(el('span',t.letter,'dot'),el('span',t.title,'ttl'));
+ const dot=el('span',null,'dot');setDot(dot,t.kindIcon||(S.icons&&S.icons[t.pid]),t.letter);d.append(dot,el('span',t.title,'ttl'));
  if(t.audible||t.muted){const a=el('button',null,'au');a.innerHTML=t.muted?MUT:SPK;a.title=t.muted?'Включить звук':'Отключить звук';a.onclick=e=>{e.stopPropagation();api.muteTab(t.id)};a.onpointerdown=e=>e.stopPropagation();d.append(a)}
  const x=el('button',null,'x');x.innerHTML=XI;x.title='Закрыть (Ctrl+W)';x.onclick=e=>{e.stopPropagation();api.closeTab(t.id)};d.append(x);
  d.onclick=e=>{if(suppress)return;
@@ -61,11 +62,12 @@ function render(){
    for(const f of folders){const x=el('button','▾ '+f,'bm fd');x.onclick=e=>{const r=e.currentTarget.getBoundingClientRect();api.bmFolderMenu({name:f,anchor:{x:r.left,y:r.bottom+4,align:'left'}})};B.append(x)}
    if(!BM.list.length)B.append(el('span','Закладок пока нет: нажми ☆ в адресной строке','m'))}}
  for(const id of [...selected])if(!S.tabs.some(x=>x.id===id))selected.delete(id);
- const key=JSON.stringify([[...selected],S.mode,S.active,w,S.tabs.map(t=>[t.id,t.title,t.color,t.letter,t.audible,t.muted,t.pinned]),side?S.profiles:0]);
+ const ik=Object.keys(S.icons||{}).map(k=>k+':'+(S.icons[k]||'').length).join();
+ const key=JSON.stringify([ik,[...selected],S.mode,S.active,w,S.tabs.map(t=>[t.id,t.title,t.color,t.letter,t.audible,t.muted,t.pinned]),side?S.profiles:0]);
  if(key===lastKey||dragging)return;lastKey=key;
  const T=$('tabs'),G=$('groups');T.replaceChildren();G.replaceChildren();
  if(!side){for(const t of S.tabs)T.append(tab(t,w));const act=T.querySelector('.act');if(act)act.scrollIntoView({block:'nearest',inline:'nearest'})}
- else{for(const p of S.profiles){const h=el('div',null,'gh'),d=el('span',p.icon||p.name[0].toUpperCase(),'dot');d.style.setProperty('--c',p.color);h.append(d,el('span',p.name));
+ else{for(const p of S.profiles){const h=el('div',null,'gh'),d=el('span',null,'dot');d.style.setProperty('--c',p.color);setDot(d,p.icon,p.name[0].toUpperCase());h.append(d,el('span',p.name));
    if(p.id[0]!=='_'){const b=el('button',null,'ib sm');b.innerHTML=PI;b.title='Новая вкладка в этом аккаунте';b.onclick=()=>api.newTab(p.id);h.append(b)}
    G.append(h);for(const t of S.tabs.filter(x=>x.pid===p.id))G.append(tab(t,0))}
   const n=el('button','+ Новая вкладка…','nb');n.onclick=e=>api.newTabMenu(anchor(e,false));G.append(n)}

@@ -16,5 +16,9 @@ async function init(){const c=await api.getSettings();
  const adShow=async()=>{const i=await api.adInfo();$('adv').textContent=(i.engine?'Усиленный режим (фильтры EasyList и uBlock). ':'Базовый режим (список доменов). ')+i.domains+' доменов'+(i.updated?', обновлено '+new Date(i.updated).toLocaleDateString('ru-RU'):'')};adShow();
  $('adu').onclick=async()=>{$('adu').disabled=true;$('adu').textContent='Обновляю…';await api.adUpdate();$('adu').disabled=false;$('adu').textContent='Обновить сейчас';adShow();flash()};
  $('uaVersion').value=c.uaVersion||'';$('uaVersion').onchange=()=>save({uaVersion:$('uaVersion').value.trim()});
+ const bkShow=c=>{$('bkst').textContent=c.hasBackupPw?'задан и запомнен на этом компьютере':'не задан'};bkShow(c);
+ $('bkpw').onclick=async()=>{const r=await api.bkSetPw();if(r.error)await api.alert(r.error);else if(r.ok){await api.alert('Пароль для резервных копий сохранён.');bkShow({hasBackupPw:true})}};
+ $('bkc').onclick=async()=>{const r=await api.bkCreate();if(r.error)await api.alert(r.error);else if(r.ok){await api.alert('Копия создана. Профилей: '+r.profiles+', записей входа (куки): '+r.cookies+'.');bkShow({hasBackupPw:true})}};
+ $('bkr').onclick=async()=>{const r=await api.bkRestore();if(r.error)await api.alert(r.error);else if(r.ok)await api.alert('Восстановлено. Профилей: '+r.np+', закладок добавлено: '+r.nb+', записей входа: '+r.nc+'.')};
  $('chk').onclick=()=>api.checkUpdates();$('log').onclick=()=>api.showLog()}
 init();

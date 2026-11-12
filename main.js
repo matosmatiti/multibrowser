@@ -3,6 +3,7 @@ const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeSto
 const path=require('path'),fs=require('fs'),net=require('net'),crypto=require('crypto');
 const {spawn,spawnSync}=require('child_process');
 const {autoUpdater}=require('electron-updater');
+const {pathToFileURL}=require('url');
 const RES=app.isPackaged?process.resourcesPath:path.join(__dirname,'resources');
 const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json');
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
@@ -17,6 +18,9 @@ const saveCfg=()=>{try{fs.writeFileSync(SETF(),JSON.stringify(cfg,null,1))}catch
 const applyTheme=()=>{nativeTheme.themeSource=['light','dark'].includes(cfg.theme)?cfg.theme:'system'};
 const homeUrl=()=>cfg.home==='blank'?'about:blank':(cfg.home==='custom'&&/^https?:\/\//i.test(cfg.customHome)?cfg.customHome:'https://www.google.com/');
 const searchUrl=()=>ENG[cfg.search]||ENG.google;
+const infoUrl=q=>pathToFileURL(path.join(__dirname,'ui','start.html')).href+'?'+new URLSearchParams({name:q.name,color:colorOf(q.id),icon:q.icon||'',conn:connKind(q),s:searchUrl()}).toString();
+function startUrl(q){const m=q.start||(cfg.home==='info'?'info':'');if(m==='info')return infoUrl(q);if(m==='blank')return 'about:blank';if(q.start==='google')return 'https://www.google.com/';return homeUrl()}
+const shownUrl=u=>/[\\/]ui[\\/]start\.html/.test(u)?'':u;
 const PAGES={extensions:{file:'ui/extensions.html',pid:'_ext',title:'Расширения',icon:'⧉'},scripts:{file:'ui/scripts.html',pid:'_sc',title:'Скрипты',icon:'⚡'},bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map();
 const hooked=new Set(),live=new Map(),closedTabs=[];
@@ -35,7 +39,8 @@ function dropOverlay(v){if(!v)return;try{v.setVisible(false)}catch{}try{if(v.__w
 function attach(v){if(v.__w&&v.__w!==win&&!v.__w.isDestroyed()){try{v.__w.contentView.removeChildView(v)}catch{}}win.contentView.addChildView(v);v.__w=win;overlayW=curW}
 const ICON=path.join(__dirname,'ui','icon.png');
 const load=()=>{try{return JSON.parse(fs.readFileSync(FILE(),'utf8'))}catch{return[]}};
-const save=l=>fs.writeFileSync(FILE(),JSON.stringify(l,null,1));
+let metaMap=null;
+const save=l=>{metaMap=null;fs.writeFileSync(FILE(),JSON.stringify(l,null,1))};
 const prof=id=>load().find(p=>p.id===id);
 // секреты (VPN-конфиги) шифруются средствами Windows (DPAPI), мастер-пароль не нужен
 const enc=s=>safeStorage.encryptString(s).toString('base64');
@@ -48,9 +53,13 @@ async function waitPort(p){for(let i=0;i<40;i++){if(await probe(p))return true;a
 const kill=c=>{try{c&&c.pid&&spawn('taskkill',['/pid',String(c.pid),'/T','/F'],{windowsHide:true})}catch{}};
 function cleanup(j){kill(j.wp);if(j.conf)try{fs.rmSync(j.conf,{force:true})}catch{}}
 const PAL=['#ff7a59','#4c8dff','#3ecf8e','#b58cff','#ffc247','#ff6b9a','#2ec4c4','#9aa5b8'];
-const colorOf=id=>PAL[parseInt(id.replace(/-/g,'').slice(0,6),16)%PAL.length];
+const autoColor=id=>PAL[parseInt(id.replace(/-/g,'').slice(0,6),16)%PAL.length];
+const rebuildMeta=()=>{metaMap=new Map();for(const q of load())metaMap.set(q.id,{color:q.color||'',icon:q.icon||''})};
+const meta=id=>{if(!metaMap)rebuildMeta();return metaMap.get(id)||{}};
+const colorOf=id=>meta(id).color||autoColor(id),iconOf=id=>meta(id).icon||'';
+const connKind=q=>q.vpn?'VPN-конфиг'+(q.vpnNote?' (AWG→WG)':''):q.proxy?q.proxy.type.toUpperCase()+' '+q.proxy.host+':'+q.proxy.port:'Без прокси';
 const pushMgr=()=>{saveSoon();for(const W of windows)for(const t of W.tabs)if(t.kind==='manager'&&!t.view.webContents.isDestroyed())t.view.webContents.send('state',[...running.keys()])};
-const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),scripts:enabledIds(p),kind:(p.vpn?'VPN-конфиг'+(p.vpnNote?' (AWG→WG)':''):p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси')+(p.tz?' · '+p.tz:'')}));
+const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',scripts:enabledIds(p),kind:(p.vpn?'VPN-конфиг'+(p.vpnNote?' (AWG→WG)':''):p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси')+(p.tz?' · '+p.tz:'')}));
 
 // ---------- подключения: прокси с логином и VPN-конфиги (WireGuard) через sing-box ----------
 const needsTunnel=p=>!!(p.vpn||(p.proxy&&p.proxy.user));
@@ -149,7 +158,8 @@ function pushTabs(){
  const pgOf=id=>Object.values(PAGES).find(x=>x.pid===id),nm=id=>pgOf(id)?pgOf(id).title:(all.find(p=>p.id===id)||{name:'?'}).name;
  const col=id=>id[0]==='_'?'#8b93a5':colorOf(id);
  win.webContents.send('tabs',{mode,active,incognito:!!(curW&&curW.incognito),blocked:(t&&t.blocked)||0,adOn:!!cfg.adblock,loading:!!(t&&!t.kind&&t.loading),waiting:!!(t&&t.ready===false),starred:!!(pg&&bookmarks.some(b=>b.url===t.url)),url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
-  profiles:[...new Set(tabs.map(x=>x.pid))].map(id=>({id,name:nm(id),color:col(id),icon:pgOf(id)?pgOf(id).icon:null})),
+  profiles:[...new Set(tabs.map(x=>x.pid))].map(id=>({id,name:nm(id),color:col(id),icon:pgOf(id)?pgOf(id).icon:(iconOf(id)||null)})),
+  icons:Object.fromEntries([...new Set(tabs.filter(x=>!x.kind).map(x=>x.pid))].map(id=>[id,iconOf(id)]).filter(x=>x[1])),
   tabs:tabs.map(x=>({id:x.id,pid:x.pid,audible:!!x.audible,muted:!!x.muted,pinned:!!x.pinned,title:x.kind?PAGES[x.kind].title:(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind?PAGES[x.kind].icon:nm(x.pid)[0].toUpperCase()}))});
 }
 async function newTab(pid,url,bg,afterId){
@@ -167,7 +177,7 @@ async function newTab(pid,url,bg,afterId){
  try{if((p.exts||[]).length)await loadExts(ses,p,part)}catch(e){log('ext: '+e.message)}
  useW(W);
  const v=new WebContentsView({webPreferences:{session:ses,contextIsolation:true,sandbox:true}});
- const t={id:nextId++,pid,view:v,title:'',url:url||homeUrl(),vpn,ready:false,loading:true,W,blocked:0};
+ const t={id:nextId++,pid,view:v,title:'',url:url||startUrl(p),vpn,ready:false,loading:true,W,blocked:0};
  const ai=afterId?tabs.findIndex(x=>x.id===(W.anchor&&W.anchor.op===afterId?W.anchor.last:afterId)):-1;
  if(ai>=0){tabs.splice(ai+1,0,t);W.anchor={op:afterId,last:t.id}}else tabs.push(t);
  const wc=v.webContents;
@@ -187,8 +197,8 @@ async function newTab(pid,url,bg,afterId){
  on('dom-ready',()=>runScripts(wc,pid,'dom-ready'));on('did-finish-load',()=>runScripts(wc,pid,'load'));
  wc.setWindowOpenHandler(({url:u,disposition:d})=>{useW(t.W);newTab(pid,u,d==='background-tab',t.id);return{action:'deny'}});
  on('page-title-updated',(e,s)=>{t.title=s;if(t.h)t.h.title=s;saveHistSoon();pushTabs()});
- on('did-navigate',(e,u)=>{t.url=u;t.h=W.incognito?null:addHistory(pid,u);pushTabs()});
- on('did-navigate-in-page',(e,u,main)=>{t.url=u;if(main)t.h=W.incognito?null:addHistory(pid,u);pushTabs()});
+ on('did-navigate',(e,u)=>{t.url=shownUrl(u);t.h=W.incognito?null:addHistory(pid,u);pushTabs()});
+ on('did-navigate-in-page',(e,u,main)=>{t.url=shownUrl(u);if(main)t.h=W.incognito?null:addHistory(pid,u);pushTabs()});
  on('before-input-event',(e,i)=>{if(hotkey(i,wc))e.preventDefault()});
  on('found-in-page',(e,r)=>{if(t.id===active&&win&&!win.webContents.isDestroyed())win.webContents.send('find-result',{n:r.activeMatchOrdinal,total:r.matches})});
  win.contentView.addChildView(v);if(!bg||active===null)setActive(t.id);wc.loadURL(t.url);layout();pushTabs();return t;
@@ -389,7 +399,7 @@ function hideMenu(){dropOverlay(menuV);menuOpen=false}
 function profileMenu(anchor,url,incog){
  const l=load();
  if(!l.length){showMenu([{label:'Сначала создай профиль',disabled:true},{label:'Открыть «Профили»',fn:()=>openPage('manager')}],anchor);return}
- const mk=(p,fn,tag)=>({label:p.name,color:colorOf(p.id),letter:p.name[0].toUpperCase(),tag,fn}),c0=cur();
+ const mk=(p,fn,tag)=>({label:p.name,color:colorOf(p.id),letter:p.name[0].toUpperCase(),icon:p.icon||'',tag,fn}),c0=cur();
  const items=[{type:'header',label:incog?'Окно инкогнито для профиля':(url?'Открыть в профиле':'Новая вкладка в профиле')}];
  for(const p of l)items.push(mk(p,()=>incog?openIncognito(p.id):newTab(p.id,url,false,c0&&c0.id)));
  if(!url&&!incog){items.push({type:'sep'},{type:'header',label:'Усиленный режим (отдельное окно)'});
@@ -603,7 +613,7 @@ function appDialog(o){
   const w=new BrowserWindow({parent:parent||undefined,modal:!!parent,width:450,height:200,frame:false,resizable:false,minimizable:false,maximizable:false,show:false,skipTaskbar:true,
    backgroundColor:bgColor(),icon:ICON,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
   dlgs.set(id,{w,res});
-  w.loadFile('ui/dialog.html',{query:{id:String(id),p:JSON.stringify({title:o.title||'MultiBrowser',message:String(o.message||''),detail:String(o.detail||''),buttons:o.buttons||['OK'],type:o.type||'info',defaultId:o.defaultId||0,cancelId:o.cancelId})}});
+  w.loadFile('ui/dialog.html',{query:{id:String(id),p:JSON.stringify({title:o.title||'MultiBrowser',message:String(o.message||''),detail:String(o.detail||''),input:o.input||'',buttons:o.buttons||['OK'],type:o.type||'info',defaultId:o.defaultId||0,cancelId:o.cancelId})}});
   w.once('ready-to-show',()=>w.show());
   w.on('closed',()=>{const d=dlgs.get(id);if(d){dlgs.delete(id);res({response:o.cancelId!=null?o.cancelId:(o.buttons?o.buttons.length-1:0)})}});
  });
@@ -943,11 +953,42 @@ function tabsAction(ids,action){
   saveBm();pushBm();pushTabs()}
 }
 
+// ---------- резервные копии (шифруются паролем) ----------
+const BKM='MBBK1';
+function bkEncrypt(obj,pw){const salt=crypto.randomBytes(16),key=crypto.scryptSync(pw,salt,32),iv=crypto.randomBytes(12),c=crypto.createCipheriv('aes-256-gcm',key,iv);
+ const data=require('zlib').gzipSync(Buffer.from(JSON.stringify(obj))),enc2=Buffer.concat([c.update(data),c.final()]);return Buffer.concat([Buffer.from(BKM),salt,iv,c.getAuthTag(),enc2])}
+function bkDecrypt(buf,pw){
+ if(buf.subarray(0,5).toString()!==BKM)throw new Error('Это не файл резервной копии MultiBrowser');
+ const salt=buf.subarray(5,21),iv=buf.subarray(21,33),tag=buf.subarray(33,49),data=buf.subarray(49),key=crypto.scryptSync(pw,salt,32),d=crypto.createDecipheriv('aes-256-gcm',key,iv);d.setAuthTag(tag);
+ let raw;try{raw=Buffer.concat([d.update(data),d.final()])}catch{throw new Error('Неверный пароль или файл повреждён (проверь пароль)')}
+ return JSON.parse(require('zlib').gunzipSync(raw).toString('utf8'));
+}
+async function backupData(){
+ const profiles=load().map(q=>{const c=JSON.parse(JSON.stringify(q));if(c.vpn)c.vpn=dec(c.vpn);if(c.proxy&&c.proxy.pass)c.proxy.pass=dec(c.proxy.pass);return c}),cookies={};
+ for(const q of profiles){try{cookies[q.id]=await session.fromPartition('persist:p-'+q.id).cookies.get({})}catch{cookies[q.id]=[]}}
+ const {backupPwEnc,...st}=cfg;return{v:1,t:Date.now(),profiles,cookies,settings:st,bookmarks,scripts,history:history.slice(0,2000)};
+}
+async function restoreBackup(d){
+ const l=load(),byId=new Map(l.map(q=>[q.id,q]));let np=0,nc=0,nb=0;
+ for(const q of d.profiles||[]){const c=JSON.parse(JSON.stringify(q));if(c.vpn)c.vpn=enc(c.vpn);if(c.proxy&&c.proxy.pass)c.proxy.pass=enc(c.proxy.pass);
+  if(byId.has(c.id))Object.assign(byId.get(c.id),c);else{l.push(c);byId.set(c.id,c)}np++}
+ save(l);
+ for(const [pid,list] of Object.entries(d.cookies||{})){if(!byId.has(pid))continue;const ses=session.fromPartition('persist:p-'+pid);
+  for(const c of list||[]){try{const host=String(c.domain||'').replace(/^\./,'');if(!host)continue;
+   await ses.cookies.set({url:(c.secure?'https':'http')+'://'+host+(c.path||'/'),name:c.name,value:c.value,...(c.hostOnly?{}:{domain:c.domain}),path:c.path||'/',secure:!!c.secure,httpOnly:!!c.httpOnly,...(c.expirationDate?{expirationDate:c.expirationDate}:{}),sameSite:c.sameSite||'unspecified'});nc++}catch{}}}
+ const have=new Set(bookmarks.map(b=>b.url+'|'+(b.folder||'')));
+ for(const b of d.bookmarks||[]){const k=b.url+'|'+(b.folder||'');if(have.has(k))continue;have.add(k);bookmarks.push({id:uid(),title:b.title,url:b.url,folder:b.folder||'',t:b.t||Date.now()});nb++}saveBm();
+ const sid=new Set(scripts.map(x=>x.id));for(const x of d.scripts||[])if(!sid.has(x.id))scripts.push(x);saveScripts();
+ if(d.settings){const keep=cfg.backupPwEnc;Object.assign(cfg,d.settings);if(keep)cfg.backupPwEnc=keep;saveCfg();applyTheme()}
+ pushMgr();pushTabs();pushBm();return{np,nc,nb};
+}
+async function askPw(msg){const r=await appDialog({title:'Резервные копии',message:msg,buttons:['OK','Отмена'],defaultId:0,cancelId:1,input:'password'});return r.response===0?(r.text||''):null}
+
 // ---------- IPC ----------
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
 H('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
  return r.canceled?null:{name:path.basename(r.filePaths[0]),text:fs.readFileSync(r.filePaths[0],'utf8')}});
-H('add',(e,d)=>{const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};let note='';
+H('add',(e,d)=>{const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};let note='';if(d.folder)p.folder=String(d.folder).trim().slice(0,60);
  if(d.mode==='vpn'&&d.confText){try{if(parseWg(d.confText).awg){p.vpnNote='awg';note='Обнаружен конфиг AmneziaWG: для него используется отдельное ядро sing-box-lx, параметры маскировки сохраняются.'}}catch(x){return{error:x.message}}p.vpn=enc(d.confText)}
  else if(d.mode==='proxy'&&d.host){p.proxy={type:d.type,host:d.host,port:d.port};if(d.user){p.proxy.user=d.user;p.proxy.pass=enc(d.pass||'')}}
  l.push(p);save(l);pushTabs();pushMgr();return{ok:true,note}});
@@ -976,7 +1017,7 @@ function openPage(kind,bg){   // внутренние страницы («Про
 const openManager=bg=>openPage('manager',bg);
 H('openManager',()=>{openManager()});
 H('openSettings',()=>{openPage('settings')});
-H('getSettings',()=>({...cfg,version:app.getVersion(),dlDefault:app.getPath('downloads')}));
+H('getSettings',()=>{const {backupPwEnc,...c}=cfg;return{...c,hasBackupPw:!!backupPwEnc,version:app.getVersion(),dlDefault:app.getPath('downloads')}});
 H('setSettings',(e,p)=>{for(const k of Object.keys(DEF))if(k in p)cfg[k]=p[k];saveCfg();applyTheme();layout();pushBm();return true});
 H('checkUpdates',()=>manualCheck());
 H('toggleDownloads',()=>togglePanel());
@@ -993,13 +1034,18 @@ H('find',(e,d)=>{const w=pageWc();if(w&&d.text)w.findInPage(d.text,{forward:d.fo
 H('stopFind',()=>{const w=pageWc();if(w)w.stopFindInPage('clearSelection')});
 H('pickFolder',async()=>{const r=await dialog.showOpenDialog(win,{properties:['openDirectory','createDirectory']});return r.canceled?null:r.filePaths[0]});
 H('getProfile',(e,id)=>{const p=prof(id);if(!p)return null;const x=p.proxy;
- return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:enabledIds(p),notify:p.notify!==false,
+ return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:enabledIds(p),color:p.color||'',icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',notify:p.notify!==false,
   conn:{mode:p.vpn?'vpn':x?'proxy':'none',type:x?x.type:'socks5',host:x?x.host:'',port:x?x.port:'',user:(x&&x.user)||'',hasPass:!!(x&&x.pass),hasVpn:!!p.vpn,vpnNote:!!p.vpnNote}}});
 H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{error:'Профиль не найден'};
  if(d.name&&d.name.trim())p.name=d.name.trim();if(d.downloadDir)p.downloadDir=d.downloadDir;else delete p.downloadDir;
  if(d.autoclick)p.autoclick={on:!!d.autoclick.on,rules:String(d.autoclick.rules||'').slice(0,4000)};
  if(Array.isArray(d.scripts)){p.scripts=d.scripts.filter(x=>allScripts().some(s=>s.id===x));delete p.presets}
  if(typeof d.notify==='boolean')p.notify=d.notify;
+ if(typeof d.color==='string')p.color=/^#[0-9a-fA-F]{6}$/.test(d.color)?d.color:'';
+ if(typeof d.icon==='string'&&d.icon.length<60000&&(d.icon===''||/^emoji:/.test(d.icon)||/^img:data:image\/(png|jpeg|webp);base64,/.test(d.icon)))p.icon=d.icon;
+ if(typeof d.folder==='string')p.folder=d.folder.trim().slice(0,60);
+ if(Array.isArray(d.tags))p.tags=[...new Set(d.tags.map(x=>String(x).trim().slice(0,30)).filter(Boolean))].slice(0,20);
+ if(typeof d.start==='string')p.start=['','google','blank','info'].includes(d.start)?d.start:'';
  let note='';const c=d.conn;
  if(c){
   if(c.mode==='none'){delete p.proxy;delete p.vpn;delete p.vpnNote}
@@ -1113,6 +1159,40 @@ H('extToggle',async(e,{id,pid,on})=>{const l=load(),p=l.find(x=>x.id===pid);if(!
 H('extRemove',async(e,id)=>{
  for(const [part,m] of extLoaded){const ex=m.get(id);if(ex){try{await (()=>{const x=session.fromPartition(part);return (x.extensions||x).removeExtension(ex.id)})()}catch{}m.delete(id)}}
  const l=load();for(const p of l)if(p.exts)p.exts=p.exts.filter(x=>x!==id);save(l);try{fs.rmSync(path.join(EXD(),id),{recursive:true,force:true})}catch{}return true});
+H('profMeta',(e,{ids,folder,addTags,removeTags,color,icon})=>{
+ const set=new Set(ids||[]),l=load();
+ for(const q of l){if(!set.has(q.id))continue;
+  if(typeof folder==='string')q.folder=folder.trim().slice(0,60);
+  if(Array.isArray(addTags))q.tags=[...new Set([...(q.tags||[]),...addTags.map(x=>String(x).trim().slice(0,30)).filter(Boolean)])].slice(0,20);
+  if(Array.isArray(removeTags))q.tags=(q.tags||[]).filter(x=>!removeTags.includes(x));
+  if(typeof color==='string')q.color=/^#[0-9a-fA-F]{6}$/.test(color)?color:'';
+  if(typeof icon==='string'&&icon.length<60000)q.icon=icon}
+ save(l);pushTabs();pushMgr();return true});
+H('openProfiles',async(e,{ids,newWindow})=>{
+ const list=(ids||[]).filter(id=>prof(id));if(!list.length)return false;
+ if(newWindow){const W=createWindow({instant:true,incognito:!!(curW&&curW.incognito)});useW(W)}
+ const base=cur();let first=true;
+ for(const id of list){await newTab(id,undefined,!first&&true,first&&base&&!newWindow?base.id:undefined);first=false}
+ return true});
+H('bkInfo',()=>({hasPw:!!cfg.backupPwEnc}));
+H('bkSetPw',async()=>{const a=await askPw('Придумай пароль для резервных копий');if(!a)return{canceled:true};if(a.length<6)return{error:'Пароль слишком короткий (минимум 6 символов)'};
+ const b=await askPw('Повтори пароль');if(b!==a)return{error:'Пароли не совпали'};cfg.backupPwEnc=enc(a);saveCfg();return{ok:true}});
+H('bkCreate',async()=>{
+ let pw=null;try{pw=cfg.backupPwEnc?dec(cfg.backupPwEnc):null}catch{}
+ if(!pw){const a=await askPw('Задай пароль для резервных копий (запомни его: он нужен при восстановлении на другом компьютере)');if(!a||a.length<6)return{error:'Нужен пароль не короче 6 символов'};cfg.backupPwEnc=enc(a);saveCfg();pw=a}
+ const r=await dialog.showSaveDialog(win,{defaultPath:'MultiBrowser-'+new Date().toISOString().slice(0,10)+'.mbbak',filters:[{name:'Резервная копия MultiBrowser',extensions:['mbbak']}]});
+ if(r.canceled||!r.filePath)return{canceled:true};
+ const data=await backupData();fs.writeFileSync(r.filePath,bkEncrypt(data,pw));
+ return{ok:true,profiles:data.profiles.length,cookies:Object.values(data.cookies).reduce((a,x)=>a+x.length,0)}});
+H('bkRestore',async()=>{
+ const r=await dialog.showOpenDialog(win,{filters:[{name:'Резервная копия MultiBrowser',extensions:['mbbak']}],properties:['openFile']});
+ if(r.canceled||!r.filePaths||!r.filePaths[0])return{canceled:true};
+ const buf=fs.readFileSync(r.filePaths[0]);let data=null,pw=null;try{pw=cfg.backupPwEnc?dec(cfg.backupPwEnc):null}catch{}
+ if(pw){try{data=bkDecrypt(buf,pw)}catch(e){if(!/пароль/i.test(e.message))return{error:e.message}}}
+ if(!data){const a=await askPw('Введи пароль этой резервной копии');if(!a)return{canceled:true};try{data=bkDecrypt(buf,a)}catch(e){return{error:e.message}}}
+ const c=await appDialog({title:'Восстановление',message:'Восстановить данные из копии?',detail:'Профилей: '+(data.profiles||[]).length+', закладок: '+(data.bookmarks||[]).length+'. Профили с теми же идентификаторами будут заменены, остальное добавится.',buttons:['Восстановить','Отмена'],defaultId:0,cancelId:1,type:'question'});
+ if(c.response!==0)return{canceled:true};
+ return{ok:true,...(await restoreBackup(data))}});
 H('moveTab',(e,{id,to})=>{const i=tabs.findIndex(x=>x.id===id);if(i<0)return;const [t]=tabs.splice(i,1);tabs.splice(Math.max(0,Math.min(to,tabs.length)),0,t);pushTabs()});
 H('detachTab',(e,{id,x,y})=>detachTab(id,x,y));
 H('tabsAction',(e,{ids,action})=>tabsAction(ids,action));
@@ -1139,7 +1219,7 @@ H('tabMenu',(e,{id,anchor,ids})=>{
  if(tabs.length>1)items.push({label:'Закрыть остальные',fn:()=>{for(const x of tabs.filter(y=>y.id!==id))closeTab(x.id)}});
  if(i<tabs.length-1)items.push({label:'Закрыть вкладки справа',fn:()=>{for(const x of tabs.slice(i+1))closeTab(x.id)}});
  showMenu(items,anchor||cursorAnchor())});
-H('dlgResult',(e,{id,i})=>{const d=dlgs.get(id);if(d){dlgs.delete(id);d.res({response:i});if(!d.w.isDestroyed())d.w.close()}});
+H('dlgResult',(e,{id,i,text})=>{const d=dlgs.get(id);if(d){dlgs.delete(id);d.res({response:i,text});if(!d.w.isDestroyed())d.w.close()}});
 H('dlgResize',(e,{id,h})=>{const d=dlgs.get(id);if(!d||d.w.isDestroyed())return;d.w.setContentSize(450,Math.max(150,Math.min(h,520)));
  const P=windows.find(x=>!x.dead);if(P){const b=P.win.getBounds();d.w.setPosition(Math.round(b.x+(b.width-450)/2),Math.round(b.y+(b.height-h)/3))}});
 H('uiConfirm',(e,m)=>appDialog({message:String(m),buttons:['Да','Отмена'],defaultId:0,cancelId:1,type:'question'}).then(r=>r.response===0));

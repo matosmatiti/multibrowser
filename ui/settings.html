@@ -23,7 +23,7 @@ input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover
 <h2>ПОИСК И СТАРТ</h2>
 <div class="r"><label for="search">Поисковая система</label><select id="search"><option value="google">Google</option><option value="duckduckgo">DuckDuckGo</option><option value="bing">Bing</option></select></div>
 <div class="r"><label for="translateTo">Переводить страницы на</label><select id="translateTo"><option value="ru">Русский</option><option value="en">Английский</option><option value="uk">Украинский</option><option value="de">Немецкий</option><option value="fr">Французский</option><option value="es">Испанский</option><option value="it">Итальянский</option><option value="pl">Польский</option><option value="tr">Турецкий</option><option value="zh-CN">Китайский</option></select></div>
-<div class="r"><label for="home">Стартовая страница новой вкладки</label><select id="home"><option value="google">Google</option><option value="blank">Пустая страница</option><option value="custom">Своя ссылка</option></select></div>
+<div class="r"><label for="home">Стартовая страница новой вкладки</label><select id="home"><option value="google">Google</option><option value="blank">Пустая страница</option><option value="info">Информация о профиле (IP, страна)</option><option value="custom">Своя ссылка</option></select></div>
 <div class="r" id="cr" hidden><label for="custom">Ссылка (https://…)</label><input type="text" id="custom" size="30"></div>
 <h2>ВНЕШНИЙ ВИД</h2>
 <div class="r"><label for="siteDark">Тёмная тема сайтов</label><select id="siteDark"><option value="force">Принудительно тёмная</option><option value="auto">Как у сайта (если поддерживает)</option><option value="off">Выключена</option></select></div>
@@ -37,6 +37,9 @@ input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover
 <h2>ЗАГРУЗКИ</h2>
 <div class="r"><label for="dlToast">Всплывающее окно и анимация при начале загрузки</label><input type="checkbox" id="dlToast"></div>
 <div class="r"><div>Папка загрузок по умолчанию<span class="m" id="ddv"></span></div><div><button id="dd">Выбрать…</button> <button id="ddr">Сбросить</button></div></div>
+<h2>РЕЗЕРВНЫЕ КОПИИ</h2>
+<div class="r"><div>Пароль копий<span class="m" id="bkst"></span></div><button id="bkpw">Задать или изменить</button></div>
+<div class="r"><div>Профили, закладки, скрипты и входы в аккаунты (куки)<span class="m">Файл шифруется паролем. Куки позволяют не входить заново после восстановления.</span></div><div><button id="bkc">Создать копию…</button> <button id="bkr">Восстановить…</button></div></div>
 <h2>ЗАПУСК И ОБНОВЛЕНИЯ</h2>
 <div class="r"><div>Версия Chrome для сайтов<span class="m">Пусто = версия движка. Если сайт пишет «устаревший браузер», укажи, например, 150</span></div><input type="text" id="uaVersion" size="6"></div>
 <div class="r"><label for="openBg">Открывать новые вкладки из меню и по Ctrl+клику в фоне (не переключаться на них)</label><input type="checkbox" id="openBg"></div>

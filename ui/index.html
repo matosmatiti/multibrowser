@@ -4,56 +4,68 @@
 <style>
 :root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--g:#1a8f5a;--h:#e4e7ef}
 @media(prefers-color-scheme:dark){:root{--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--g:#3ecf8e;--h:#222836}}
-body{margin:0;font:13px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--t)}
-header,#form,#edit,#chk,#imp{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:14px 16px;border-bottom:1px solid var(--b)}#form,#edit,#chk,#imp{background:var(--p)}
-h1{font-size:18px;margin:0 12px 0 0}#q{flex:1;min-width:180px}
-input,select,button{font:inherit;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:6px;padding:6px 10px}
+html,body{height:100%}body{margin:0;font:13px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--t);display:flex}
+aside{width:230px;flex:none;border-right:1px solid var(--b);background:var(--p);padding:14px;box-sizing:border-box;overflow:auto;display:flex;flex-direction:column;gap:6px}
+main{flex:1;min-width:0;display:flex;flex-direction:column;overflow:auto}
+h1{font-size:17px;margin:0 0 8px}.hd2{margin:14px 2px 4px;font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--m)}
+header,#form,#edit,#chk,#imp,#sel{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:12px 16px;border-bottom:1px solid var(--b)}header{background:var(--p)}#form,#edit,#chk,#imp,#sel{background:var(--p)}
+#q{flex:1;min-width:170px}
+input,select,button,textarea{font:inherit;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:6px;padding:6px 10px;box-sizing:border-box}
+textarea{width:100%;font:12px/1.45 Consolas,"Cascadia Mono",monospace}
 button.p{background:var(--a);border-color:var(--a);color:#0b1220;font-weight:600}
-table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px 16px;border-bottom:1px solid var(--b)}
-th{color:var(--m);font-size:11px;font-weight:600}.on{color:var(--g)}.m{color:var(--m)}
-.ic{display:inline-flex;width:28px;height:28px;border-radius:8px;align-items:center;justify-content:center;font-weight:700;color:#0b0f17;margin-right:10px;vertical-align:middle}
-#none{padding:40px;text-align:center;color:var(--m)}
-button{transition:background .12s,transform .06s,filter .12s;cursor:pointer}
-button:hover:not(:disabled){background:var(--h)}
-button.p:hover:not(:disabled){background:var(--a);filter:brightness(1.12)}
-button:active:not(:disabled){transform:scale(.95);filter:brightness(.9)}
-button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--a);outline-offset:1px}
-[hidden]{display:none!important}
-.full{flex:1 1 100%}textarea{width:100%;box-sizing:border-box;font:12px/1.45 Consolas,"Cascadia Mono",monospace;color:var(--t);background:var(--bg);border:1px solid var(--b);border-radius:6px;padding:8px}#esl label{display:inline-flex;gap:6px;align-items:center;margin-right:16px}#epr label{display:flex;gap:8px;align-items:center;margin:4px 0}
-select{appearance:none;-webkit-appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b93a5' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer;transition:background-color .15s,border-color .15s,box-shadow .15s,transform .06s}
-select:hover{background-color:var(--h);border-color:var(--a)}select:focus{border-color:var(--a);box-shadow:0 0 0 3px color-mix(in srgb,var(--a) 22%,transparent)}select:active{transform:scale(.98)}
-input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover,input[type=search]:hover,input[type=password]:hover,textarea:hover{border-color:var(--a)}
+button{transition:background .12s,transform .06s,filter .12s;cursor:pointer}button:hover{background:var(--h)}button.p:hover{background:var(--a);filter:brightness(1.12)}button:active{transform:scale(.96)}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:2px solid var(--a);outline-offset:1px}input:hover,textarea:hover{border-color:var(--a)}
+select{appearance:none;-webkit-appearance:none;padding-right:30px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%238b93a5' stroke-width='3' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 10px center;cursor:pointer}
+select:hover{background-color:var(--h);border-color:var(--a)}select:focus{border-color:var(--a)}input[type=checkbox]{accent-color:var(--a);width:16px;height:16px;cursor:pointer;padding:0}
+.seg{display:flex}.seg button{border-radius:0}.seg button:first-child{border-radius:6px 0 0 6px}.seg button:last-child{border-radius:0 6px 6px 0;border-left:0}.seg .on{background:var(--a);border-color:var(--a);color:#0b1220;font-weight:600}
+.f{display:flex;align-items:center;gap:4px}.fb{flex:1;text-align:left;display:flex;justify-content:space-between;gap:8px;overflow:hidden}.fb span:first-child{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}.fb.on{background:var(--h);border-color:var(--a)}.cnt{color:var(--m)}.small{padding:3px 8px}
+.addf{display:flex;gap:6px;margin-top:6px}.addf input{flex:1;min-width:0}
+.tg{display:flex;flex-wrap:wrap;gap:6px}.tagc{border-radius:12px;padding:2px 10px;font-size:12px}.tagc.on{background:var(--a);border-color:var(--a);color:#0b1220}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--b);vertical-align:middle;white-space:normal}th{color:var(--m);font-size:11px;font-weight:600}tr:hover td{background:var(--p)}
+.ic{display:inline-flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:8px;font-weight:700;color:#0b0f17;flex:none;overflow:hidden;font-size:15px}.ic.big{width:46px;height:46px;border-radius:12px;font-size:22px}.ic img{width:100%;height:100%;object-fit:cover}
+.nm{display:flex;align-items:center;gap:10px}.nm b{font-weight:600}.on2{color:var(--g)}.m{color:var(--m)}.chip{display:inline-block;background:var(--p);border:1px solid var(--b);border-radius:10px;padding:0 8px;font-size:11px;color:var(--m);margin:2px 4px 0 0}
+.acts{display:flex;flex-wrap:wrap;gap:6px}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px;padding:16px}
+.card{border:1px solid var(--b);border-radius:12px;padding:12px;background:var(--p);display:flex;flex-direction:column;gap:8px;transition:border-color .15s}.card:hover{border-color:var(--a)}.card .top{display:flex;gap:12px;align-items:center}.card .top .nm2{flex:1;min-width:0}
+.full{flex:1 1 100%}.row2{display:flex;flex-wrap:wrap;gap:8px;align-items:center;flex:1 1 100%}
+.sw{width:22px;height:22px;border-radius:6px;border:2px solid transparent;padding:0;cursor:pointer}.sw.on{border-color:var(--t)}.em{width:32px;height:32px;padding:0;font-size:17px;border-radius:8px}.em.on{border-color:var(--a);background:var(--h)}
+#esl label,.cb label{display:inline-flex;gap:6px;align-items:center;margin-right:16px}#none{padding:40px;text-align:center;color:var(--m)}
 #smenu{position:fixed;z-index:50;background:var(--bg);border:1px solid var(--b);border-radius:10px;padding:6px;box-shadow:0 10px 28px rgba(0,0,0,.4);max-height:380px;overflow:auto;width:340px;animation:pop .14s ease-out}
 @keyframes pop{from{opacity:0;transform:translateY(-4px)}to{opacity:1;transform:none}}
-#smenu .smh{padding:6px 8px;font-weight:600;color:var(--m);font-size:12px}#smenu label{display:flex;gap:10px;align-items:flex-start;padding:7px 8px;border-radius:6px;cursor:pointer}#smenu label:hover{background:var(--h)}
-#smenu small{display:block;color:var(--m);font-size:11px}#smenu .smn{padding:6px 8px;color:var(--g);font-size:12px;min-height:16px}td{white-space:normal}
+#smenu .smh{padding:6px 8px;font-weight:600;color:var(--m);font-size:12px}#smenu label{display:flex;gap:10px;align-items:flex-start;padding:7px 8px;border-radius:6px;cursor:pointer}#smenu label:hover{background:var(--h)}#smenu small{display:block;color:var(--m);font-size:11px}#smenu .smn{padding:6px 8px;color:var(--g);font-size:12px;min-height:16px}
+[hidden]{display:none!important}
 </style></head><body>
-<header><h1>Профили</h1><input id="q" type="search" placeholder="Поиск по профилям…" aria-label="Поиск"><button id="bulk">Импорт списком</button><button class="p" id="new">+ Новый профиль</button></header>
+<aside><h1>Профили</h1><div id="folders"></div><div class="addf"><input id="nf" placeholder="Новая папка" aria-label="Новая папка"><button id="nfb" title="Создать папку">+</button></div>
+<div class="hd2">Теги</div><div id="tags" class="tg"></div></aside>
+<main>
+<header><input id="q" type="search" placeholder="Поиск по имени, папке, тегу, прокси…" aria-label="Поиск"><div class="seg"><button id="vt">Таблица</button><button id="vc">Карточки</button></div><button id="bulk">Импорт списком</button><button class="p" id="new">+ Новый профиль</button></header>
 <section id="form" hidden>
-<input id="n" placeholder="Название профиля" aria-label="Название профиля">
+<input id="n" placeholder="Название профиля" aria-label="Название профиля"><input id="nfo" list="fl" placeholder="Папка" size="12" aria-label="Папка">
 <select id="mode" aria-label="Подключение"><option value="none">Без прокси</option><option value="proxy">Прокси</option><option value="vpn">VPN-конфиг (.conf)</option></select>
 <span id="px" hidden><select id="ty" aria-label="Тип"><option>socks5</option><option>http</option></select> <input id="h" placeholder="host" size="14"> <input id="po" placeholder="порт" size="5"> <input id="us" placeholder="логин (необязательно)" size="16"> <input id="pw" type="password" placeholder="пароль" size="12"></span>
-<button id="pick" hidden>Выбрать .conf</button><span id="cf" class="m"></span>
-<button class="p" id="add">Создать</button><button id="cancel">Отмена</button>
-</section>
-<section id="edit" hidden><b>Настройки профиля</b>
-<input id="en" placeholder="Название профиля" aria-label="Название профиля">
-<span class="m">Папка загрузок:</span><input id="ed" readonly size="38" aria-label="Папка загрузок"><button id="epick">Выбрать…</button><button id="ereset">По умолчанию</button>
+<button id="pick" hidden>Выбрать .conf</button><span id="cf" class="m"></span><button class="p" id="add">Создать</button><button id="cancel">Отмена</button></section>
+<section id="edit" hidden><b class="full">Настройки профиля</b>
+<input id="en" placeholder="Название профиля" aria-label="Название профиля"><input id="efo" list="fl" placeholder="Папка" size="14" aria-label="Папка"><input id="etg" placeholder="Теги через запятую" size="26" aria-label="Теги">
+<select id="est" aria-label="Стартовая страница"><option value="">Старт: как в настройках</option><option value="google">Старт: Google</option><option value="blank">Старт: пустая страница</option><option value="info">Старт: информация о профиле</option></select>
+<div class="row2"><span class="m">Цвет:</span><span id="ecolors" class="row2" style="flex:0 0 auto;gap:6px"></span><input type="color" id="ecustom" aria-label="Свой цвет" style="width:34px;height:26px;padding:0"><button id="ecauto" class="small">Авто</button></div>
+<div class="row2"><span class="m">Значок:</span><span id="eprev"></span><span id="eemojis" class="row2" style="flex:0 0 auto;gap:4px"></span><button id="eimgb" class="small">Своя картинка…</button><input type="file" id="eimg" accept="image/png,image/jpeg,image/webp" hidden><button id="eiclear" class="small">Убрать</button></div>
+<span class="m">Папка загрузок:</span><input id="ed" readonly size="34" aria-label="Папка загрузок"><button id="epick">Выбрать…</button><button id="ereset">По умолчанию</button>
 <div class="full"><b>Подключение</b></div>
 <select id="ecm" aria-label="Режим подключения"><option value="none">Без прокси</option><option value="proxy">Прокси</option><option value="vpn">VPN-конфиг (.conf)</option></select>
 <span id="epx" hidden><select id="ect" aria-label="Тип прокси"><option>socks5</option><option>http</option></select> <input id="ech" placeholder="host" size="14"> <input id="ecp" placeholder="порт" size="5"> <input id="ecu" placeholder="логин" size="14"> <input id="ecw" type="password" placeholder="пароль" size="22"></span>
 <span id="evp" hidden><button id="ecpick">Выбрать .conf</button> <span id="ecf" class="m"></span></span>
 <div class="full m">Подключение применяется к новым вкладкам и запускам; уже открытые вкладки перезапусти.</div>
 <div class="full"><b>Сайты и разрешения</b></div>
-<label class="full"><input type="checkbox" id="ent"> Разрешать сайтам показывать уведомления</label>
+<label class="full cb"><input type="checkbox" id="ent"> Разрешать сайтам показывать уведомления</label>
 <div class="full"><button id="erp">Сбросить запомненные разрешения сайтов</button></div>
 <div class="full"><b>Скрипты</b></div>
-<label class="full"><input type="checkbox" id="eac"> Автонажатие кнопок на сайтах</label>
-<textarea id="eacr" class="full" rows="3" spellcheck="false" placeholder="Каждая строка: сайт | текст кнопки или CSS-селектор | задержка, мс&#10;Пример: *.example.com | Продолжить | 500"></textarea>
 <div class="full m">Скрипты этого профиля (из библиотеки): <button id="esm">Открыть библиотеку</button></div><div id="esl" class="full"></div>
+<label class="full m" for="eacr"><input type="checkbox" id="eac"> Свои правила автонажатия кнопок (сайт | текст кнопки или CSS-селектор | задержка, мс)</label>
+<textarea id="eacr" class="full" rows="3" spellcheck="false" placeholder="*.example.com | Продолжить | 500"></textarea>
 <button class="p" id="esave">Сохранить</button><button id="ecancel">Отмена</button></section>
-<section id="imp" hidden><b class="full">Создать профили списком</b><textarea id="impt" class="full" rows="6" spellcheck="false" placeholder="Каждая строка: Название | прокси&#10;Примеры:&#10;Аккаунт 1 | socks5://user:pass@1.2.3.4:1080&#10;Аккаунт 2 | http://5.6.7.8:8080&#10;Аккаунт 3 (без прокси)"></textarea><button class="p" id="impgo">Создать</button><button id="impx">Отмена</button><span id="impm" class="m"></span></section>
+<section id="imp" hidden><b class="full">Создать профили списком</b><textarea id="impt" class="full" rows="6" spellcheck="false" placeholder="Каждая строка: Название | прокси&#10;Аккаунт 1 | socks5://user:pass@1.2.3.4:1080&#10;Аккаунт 2 | http://5.6.7.8:8080&#10;Аккаунт 3 (без прокси)"></textarea><button class="p" id="impgo">Создать</button><button id="impx">Отмена</button><span id="impm" class="m"></span></section>
 <section id="chk" hidden><span id="ct"></span><button class="p" id="cgeo" hidden></button><button id="cclose">Закрыть</button></section>
-<table><thead><tr><th>ПРОФИЛЬ</th><th>ПОДКЛЮЧЕНИЕ</th><th>УСИЛЕННЫЙ РЕЖИМ</th><th></th></tr></thead><tbody id="rows"></tbody></table>
-<div id="none"></div>
+<div id="sel" hidden><span>Выбрано: <b id="scnt"></b></span><input id="bf" list="fl" placeholder="Папка…" size="12" aria-label="Папка"><button id="bfm">Переместить</button><input id="bt" placeholder="Тег…" size="10" aria-label="Тег"><button id="bta">+ тег</button><button id="btr">− тег</button><button id="bo">Открыть в оболочке</button><button id="bow">В новом окне</button><button id="bd">Удалить</button><button id="bx">Снять выбор</button></div>
+<datalist id="fl"></datalist>
+<div id="content"></div><div id="none" hidden></div>
+</main>
 <script src="renderer.js"></script></body></html>

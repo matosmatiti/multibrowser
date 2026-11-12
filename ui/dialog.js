@@ -4,6 +4,8 @@ const $=i=>document.getElementById(i);
 $('tt').textContent=P.title||'MultiBrowser';$('msg').textContent=P.message||'';$('det').textContent=P.detail||'';
 const t=ICON[P.type]?P.type:'info';$('ic').className='ic '+t;$('ic').innerHTML=ICON[t];
 const B=P.buttons||['OK'],def=P.defaultId||0,cancel=P.cancelId!=null?P.cancelId:B.length-1;
-B.forEach((txt,i)=>{const b=document.createElement('button');b.textContent=txt;if(i===def)b.className='d';b.onclick=()=>api.dlgResult({id,i});$('ac').append(b)});
-document.addEventListener('keydown',e=>{if(e.key==='Escape')api.dlgResult({id,i:cancel});else if(e.key==='Enter')api.dlgResult({id,i:def})});
-requestAnimationFrame(()=>{api.dlgResize({id,h:document.documentElement.scrollHeight});const d=document.querySelector('button.d');if(d)d.focus()});
+if(P.input){const i=document.createElement('input');i.type=P.input==='password'?'password':'text';i.id='inp';i.style.cssText='width:100%;margin-top:10px;padding:8px 11px;border-radius:8px;border:1px solid var(--b);background:var(--p);color:inherit;font:inherit;box-sizing:border-box;user-select:text;outline:none';document.querySelector('.tx').append(i);setTimeout(()=>i.focus(),60)}
+const val=()=>{const i=$('inp');return i?i.value:undefined};
+B.forEach((txt,i)=>{const b=document.createElement('button');b.textContent=txt;if(i===def)b.className='d';b.onclick=()=>api.dlgResult({id,i,text:val()});$('ac').append(b)});
+document.addEventListener('keydown',e=>{if(e.key==='Escape')api.dlgResult({id,i:cancel});else if(e.key==='Enter')api.dlgResult({id,i:def,text:val()})});
+requestAnimationFrame(()=>{api.dlgResize({id,h:document.documentElement.scrollHeight});const d=document.querySelector('button.d');if(d&&!P.input)d.focus()});
