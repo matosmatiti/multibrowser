@@ -23,7 +23,7 @@ function startUrl(q){const m=q.start||(cfg.home==='info'?'info':'');if(m==='info
 const shownUrl=u=>/[\\/]ui[\\/]start\.html/.test(u)?'':u;
 const PAGES={extensions:{file:'ui/extensions.html',pid:'_ext',title:'Расширения',icon:'⧉'},scripts:{file:'ui/scripts.html',pid:'_sc',title:'Скрипты',icon:'⚡'},bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map();
-const hooked=new Set(),live=new Map(),closedTabs=[];
+const hooked=new Set(),live=new Map(),closedTabs=[],recentClosed=[];
 let menuAlts=new Map(),menuW=270,suggestSel=-1,scripts=[],dlRect=null,toastV=null,toastOpen=false,toastId=null,toastT=null,toastHover=false,flyV=null,menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
 const LOG=()=>path.join(app.getPath('userData'),'log.txt');
 const log=m=>{try{fs.appendFileSync(LOG(),new Date().toISOString()+' '+m+'\n')}catch{}};
@@ -98,23 +98,68 @@ function singConfig(p,port,wg,lx){
  c.route={final:'proxy',default_domain_resolver:'boot'};
  return c;
 }
-async function makeTunnel(p,tag){
- const port=await freePort(),dir=path.join(DATA(),'run');fs.mkdirSync(dir,{recursive:true});
+const ANSI=/\x1b\[[0-9;]*m/g,tunnelPend=new Map();
+const PORT_ALT=[51820,443,53,123,1194,500,4500,1224,88,2408,4000,8080];
+async function makeTunnel(p,tag,opt){
+ opt=opt||{};const port=await freePort(),dir=path.join(DATA(),'run');fs.mkdirSync(dir,{recursive:true});
  const wg=p.vpn?parseWg(dec(p.vpn)):null,lxExe=path.join(RES,'sing-box-lx.exe'),lx=!!(wg&&wg.awg&&fs.existsSync(lxExe));
+ if(wg){if(opt.port)wg.port=opt.port;else if(p.vpnPort)wg.port=p.vpnPort;if(opt.dns)wg.dns=opt.dns;else if(p.vpnDns)wg.dns=p.vpnDns}
  if(wg&&wg.awg&&!lx&&!wg.awgCompat)throw new Error('Конфиг AmneziaWG требует ядра sing-box-lx, а его нет в этой сборке.');
  const conf=path.join(dir,tag+p.id+'.json'),exe=lx?lxExe:path.join(RES,'sing-box.exe');
  fs.writeFileSync(conf,JSON.stringify(singConfig(p,port,wg,lx)));   // сам конфиг лежит на диске только пока профиль открыт
  const chk=spawnSync(exe,['check','-c',conf],{windowsHide:true,encoding:'utf8'});
- if(chk.status!==0){try{fs.rmSync(conf,{force:true})}catch{}const m=((chk.stderr||chk.stdout||chk.error&&chk.error.message||'')+'').trim().split('\n').pop();log('sing-box check: '+m);throw new Error('Не удалось применить настройки подключения: '+m)}
+ if(chk.status!==0){try{fs.rmSync(conf,{force:true})}catch{}const m=((chk.stderr||chk.stdout||chk.error&&chk.error.message||'')+'').replace(ANSI,'').trim().split('\n').pop();log('sing-box check: '+m);throw new Error('Не удалось применить настройки подключения: '+m)}
+ log('tunnel: core='+(lx?'lx':'official')+(wg?' peer='+wg.host+':'+wg.port+' dns='+wg.dns+' awg='+(wg.awg?'yes':'no'):' proxy-auth'));
  const wp=spawn(exe,['run','-c',conf],{windowsHide:true});let out='';
- const add=d=>{out=(out+d).slice(-800)};wp.stdout.on('data',add);wp.stderr.on('data',add);
- return {wp,conf,port,n:1,err:()=>out.trim().split('\n').pop()||'туннель не отвечает',dump:()=>out,ready:waitPort(port)};
+ const add=d=>{out=(out+d).slice(-1500)};wp.stdout.on('data',add);wp.stderr.on('data',add);
+ const clean=()=>out.replace(ANSI,'').trim();
+ return {wp,conf,port,n:1,core:lx?'lx':'official',peerPort:wg?wg.port:null,err:()=>clean().split('\n').pop()||'туннель не отвечает',dump:()=>clean(),ready:waitPort(port)};
 }
+// проверка, что трафик реально идёт через туннель: запрос по IP (без DNS) и по имени (через DNS туннеля)
+function socksProbe(port,host,ms){return new Promise(res=>{
+ const s=net.connect(port,'127.0.0.1');let st=0,buf=Buffer.alloc(0),done=false;
+ const tm=setTimeout(()=>fin(false),ms),fin=v=>{if(done)return;done=true;clearTimeout(tm);try{s.destroy()}catch{}res(v)};
+ s.on('error',()=>fin(false));s.on('close',()=>fin(false));s.on('connect',()=>s.write(Buffer.from([5,1,0])));
+ s.on('data',d=>{buf=Buffer.concat([buf,d]);
+  if(st===0){if(buf.length<2)return;if(buf[0]!==5||buf[1]!==0)return fin(false);buf=buf.subarray(2);st=1;
+   const ip=/^\d+\.\d+\.\d+\.\d+$/.test(host),addr=ip?Buffer.from(host.split('.').map(Number)):Buffer.concat([Buffer.from([host.length]),Buffer.from(host)]);
+   s.write(Buffer.concat([Buffer.from([5,1,0,ip?1:3]),addr,Buffer.from([0,80])]))}
+  if(st===1){if(buf.length<4)return;if(buf[1]!==0)return fin(false);
+   const need=buf[3]===1?10:buf[3]===4?22:7+buf[4];if(buf.length<need)return;buf=buf.subarray(need);st=2;
+   s.write('GET / HTTP/1.1\r\nHost: '+host+'\r\nConnection: close\r\n\r\n')}
+  if(st===2&&buf.length>=5)fin(buf.subarray(0,5).toString()==='HTTP/')})});}
+function saveVpn(id,o){const l=load(),q=l.find(x=>x.id===id);if(q){Object.assign(q,o);save(l)}}
+async function ensureTunnel(p,tag,start,progress){
+ progress=progress||(()=>{});let t=await start({});
+ if(!p.vpn){if(!await t.ready){const e=t.err();cleanup(t);throw new Error('Не удалось подключиться: '+e)}return t}
+ const alive=async(tt,ms)=>(await tt.ready)&&((await socksProbe(tt.port,'1.1.1.1',ms))||(await socksProbe(tt.port,'1.0.0.1',2500)));
+ const wg=parseWg(dec(p.vpn));let cur0=p.vpnPort||wg.port;const tried=[cur0];
+ let ok=await alive(t,7000);
+ for(const port of [wg.port,...PORT_ALT]){
+  if(ok)break;if(tried.includes(port))continue;tried.push(port);
+  progress('Подбираю порт VPN: '+port+'…');cleanup(t);t=await start({port});cur0=port;ok=await alive(t,5000);
+ }
+ if(!ok){const info=t.core+': '+t.dump().split('\n').slice(-2).join(' | ');cleanup(t);
+  throw new Error('VPN-сервер не отвечает (проверены порты: '+tried.join(', ')+'). Возможно, порты заблокированы, конфиг просрочен или нужен другой тип подключения. ['+info+']')}
+ if(cur0!==(p.vpnPort||wg.port)){saveVpn(p.id,{vpnPort:cur0});log('vpn port saved: '+cur0)}   // запоминаем рабочий порт
+ if(!await socksProbe(t.port,'one.one.one.one',6000)){   // трафик идёт, а имена не находятся: берём публичный DNS через туннель
+  progress('Настраиваю DNS…');cleanup(t);const t2=await start({port:cur0,dns:'1.1.1.1'});
+  if(await alive(t2,6000)&&await socksProbe(t2.port,'one.one.one.one',6000)){saveVpn(p.id,{vpnDns:'1.1.1.1'});log('vpn dns fallback saved');return t2}
+  cleanup(t2);t=await start({port:cur0});await t.ready}
+ return t;
+}
+function setBusy(W,msg){if(!W||W.dead)return;W.busy=msg||'';const c=curW;if(useW(W))pushTabs();if(c&&!c.dead)useW(c)}
 async function tunnelFor(p){
  let t=tunnels.get(p.id);
- if(t)t.n++;else{t=await makeTunnel(p,'s-');tunnels.set(p.id,t)}
- if(!await t.ready){const e=t.err();log('tunnel failed: '+e);dropTunnel(p.id,true);throw new Error('Не удалось подключиться: '+e)}
- return `socks5://127.0.0.1:${t.port}`;
+ if(!t){
+  let pr=tunnelPend.get(p.id);
+  if(!pr){const W0=curW;
+   pr=(async()=>{setBusy(W0,'Подключаюсь к VPN…');try{const tt=await ensureTunnel(p,'s-',o=>makeTunnel(p,'s-',o),m=>setBusy(W0,m));tt.n=0;tunnels.set(p.id,tt);return tt}
+    catch(e){log('tunnel failed: '+e.message);throw e}finally{setBusy(W0,'')}})();
+   tunnelPend.set(p.id,pr);pr.then(()=>tunnelPend.delete(p.id),()=>tunnelPend.delete(p.id));}
+  t=await pr;
+ }
+ t.n++;return `socks5://127.0.0.1:${t.port}`;
 }
 function dropTunnel(id,force){const t=tunnels.get(id);if(!t)return;if(!force&&--t.n>0)return;cleanup(t);tunnels.delete(id)}
 
@@ -142,12 +187,23 @@ function applyGeo(wc,p){   // обычный user-agent и client hints Chrome (
  send('Runtime.addBinding',{name:'mbNotify'});
  if(!wc.__mbDbg){wc.__mbDbg=true;try{wc.debugger.on('message',(ev,method,params)=>{if(method==='Runtime.bindingCalled'&&params&&params.name==='mbNotify')notifyMsg(wc,params.payload)})}catch{}}
 }
-const topH=()=>(mode==='side'?42:82)+(cfg.bmBar?30:0);
+const barRow=()=>!!cfg.bmBar||(cfg.favScripts||[]).length>0;
+const topH=()=>(mode==='side'?42:82)+(barRow()?30:0);
+const isLocalHost=h=>/^(localhost|127\.|0\.0\.0\.0|\[?::1\]?$)/.test(h)||/\.(local|localhost|test|internal)$/.test(h)||/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(h);
+function darkWanted(url){   // принудительная тёмная тема: для всех сайтов, кроме локальных адресов и отключённых вручную
+ let u;try{u=new URL(url)}catch{return null}if(!/^https?:$/.test(u.protocol))return null;
+ const pref=(cfg.darkSites||{})[u.origin];if(pref==='on')return true;if(pref==='off')return false;
+ return cfg.siteDark==='force'&&!isLocalHost(u.hostname);
+}
+function applyDark(t,url){const w=darkWanted(url);if(w===null)return;try{t.view.webContents.debugger.sendCommand('Emulation.setAutoDarkModeOverride',{enabled:w}).catch(()=>{})}catch{}}
+function toggleSiteDark(t){const u=t.view.webContents.getURL();let o='';try{o=new URL(u).origin}catch{return}const want=darkWanted(u);cfg.darkSites=cfg.darkSites||{};cfg.darkSites[o]=want?'off':'on';saveCfg();applyDark(t,u)}
 function layout(){
- if(!win||win.isDestroyed())return;const b=win.getContentBounds(),W=b.width,H=b.height;
- const x=mode==='side'?240:0,y=topH();
- for(const t of tabs){if(t.id===active&&t.ready!==false){t.view.setBounds(t.fs?{x:0,y:0,width:W,height:H}:{x,y,width:Math.max(W-x,1),height:Math.max(H-y,1)});t.view.setVisible(true)}}
- for(const t of tabs){if(!(t.id===active&&t.ready!==false))t.view.setVisible(false)}
+ if(!win||win.isDestroyed())return;const b=win.getContentBounds(),W=b.width,H=b.height,x=mode==='side'?240:0,y=topH();
+ for(const t of tabs){if(t.__w!==win){t.__w=win;t.__bk=null;t.__vis=null}}
+ for(const t of tabs){if(t.id===active&&t.ready!==false){
+  const nb=t.fs?{x:0,y:0,width:W,height:H}:{x,y,width:Math.max(W-x,1),height:Math.max(H-y,1)},k=nb.x+','+nb.y+','+nb.width+','+nb.height;
+  if(t.__bk!==k){t.view.setBounds(nb);t.__bk=k}if(t.__vis!==true){t.view.setVisible(true);t.__vis=true}}}
+ for(const t of tabs){if(!(t.id===active&&t.ready!==false)&&t.__vis!==false){t.view.setVisible(false);t.__vis=false}}
  if(panel&&panelOpen)panel.setBounds(panelBounds());
 }
 function pushTabs(){
@@ -157,10 +213,10 @@ function pushTabs(){
  if(pg)lastPid=t.pid;
  const pgOf=id=>Object.values(PAGES).find(x=>x.pid===id),nm=id=>pgOf(id)?pgOf(id).title:(all.find(p=>p.id===id)||{name:'?'}).name;
  const col=id=>id[0]==='_'?'#8b93a5':colorOf(id);
- win.webContents.send('tabs',{mode,active,incognito:!!(curW&&curW.incognito),blocked:(t&&t.blocked)||0,adOn:!!cfg.adblock,loading:!!(t&&!t.kind&&t.loading),waiting:!!(t&&t.ready===false),starred:!!(pg&&bookmarks.some(b=>b.url===t.url)),url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
+ win.webContents.send('tabs',{mode,active,incognito:!!(curW&&curW.incognito),apid:pg?t.pid:null,favs:favList(pg?prof(t.pid):null),busy:(curW&&curW.busy)||'',blocked:(t&&t.blocked)||0,adOn:!!cfg.adblock,loading:!!(t&&!t.kind&&t.loading),waiting:!!(t&&t.ready===false)||!!(curW&&curW.busy),starred:!!(pg&&bookmarks.some(b=>b.url===t.url)),url:pg?t.url:'',canBack:nh?nh.canGoBack():false,canFwd:nh?nh.canGoForward():false,
   profiles:[...new Set(tabs.map(x=>x.pid))].map(id=>({id,name:nm(id),color:col(id),icon:pgOf(id)?pgOf(id).icon:(iconOf(id)||null)})),
   icons:Object.fromEntries([...new Set(tabs.filter(x=>!x.kind).map(x=>x.pid))].map(id=>[id,iconOf(id)]).filter(x=>x[1])),
-  tabs:tabs.map(x=>({id:x.id,pid:x.pid,audible:!!x.audible,muted:!!x.muted,pinned:!!x.pinned,title:x.kind?PAGES[x.kind].title:(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind?PAGES[x.kind].icon:nm(x.pid)[0].toUpperCase()}))});
+  tabs:tabs.map(x=>({id:x.id,pid:x.pid,audible:!!x.audible,muted:!!x.muted,pinned:!!x.pinned,loading:!!(x.loading&&!x.kind&&x.ready!==false),title:x.kind?PAGES[x.kind].title:(x.title||x.url||'Новая вкладка'),color:col(x.pid),letter:x.kind?PAGES[x.kind].icon:nm(x.pid)[0].toUpperCase()}))});
 }
 async function newTab(pid,url,bg,afterId){
  const p=prof(pid);if(!p)return null;
@@ -183,14 +239,14 @@ async function newTab(pid,url,bg,afterId){
  const wc=v.webContents;
  v.setBackgroundColor(pageBg());try{wc.setBackgroundThrottling(false)}catch{}
  const on=(ev,fn)=>wc.on(ev,(...a)=>{if(useW(t.W))fn(...a)}),once=(ev,fn)=>wc.once(ev,(...a)=>{if(useW(t.W))fn(...a)});
- on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;userDocStart(t,u);adCosmetics(t,u);notifyDoc(t,u)}});
+ on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;userDocStart(t,u);adCosmetics(t,u);notifyDoc(t,u);applyDark(t,u)}});
  on('context-menu',(e,pr)=>ctxMenu(t,pr));
  const au=()=>{const a=wc.isCurrentlyAudible(),m=wc.isAudioMuted();if(t.audible!==a||t.muted!==m){t.audible=a;t.muted=m;if(useW(t.W))pushTabs()}};
  on('audio-state-changed',au);on('media-started-playing',au);on('media-paused',au);
  on('enter-html-full-screen',()=>{t.fs=true;win.setFullScreen(true);layout()});on('leave-html-full-screen',()=>{t.fs=false;win.setFullScreen(false);layout()});
  on('zoom-changed',(e,dir)=>zoom(dir==='in'?1:-1));
  wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
- const mkReady=()=>{if(!t.ready&&useW(t.W)){t.ready=true;layout();pushTabs()}};   // страница показывается, когда готова: без белой вспышки
+ const mkReady=()=>{if(!t.ready&&useW(t.W)){t.ready=true;layout();pushTabs();if(t.id===active)focusSoon()}};   // страница показывается, когда готова: без белой вспышки
  once('dom-ready',()=>setTimeout(mkReady,60));setTimeout(mkReady,3500);
  on('did-start-loading',()=>{t.loading=true;pushTabs()});on('did-stop-loading',()=>{t.loading=false;mkReady();pushTabs()});
  applyGeo(wc,p);
@@ -204,10 +260,11 @@ async function newTab(pid,url,bg,afterId){
  win.contentView.addChildView(v);if(!bg||active===null)setActive(t.id);wc.loadURL(t.url);layout();pushTabs();return t;
 }
 function closeTab(id){
- const i=tabs.findIndex(x=>x.id===id);if(i<0)return;const t=tabs[i];closedTabs.push({pid:t.pid,kind:t.kind||'',url:t.kind?'':(t.view.webContents.isDestroyed()?t.url:(t.view.webContents.getURL()||t.url))});if(closedTabs.length>20)closedTabs.shift();tabs.splice(i,1);
+ const i=tabs.findIndex(x=>x.id===id);if(i<0)return;const t=tabs[i];closedTabs.push({type:'tab',pid:t.pid,kind:t.kind||'',url:t.kind?'':(t.view.webContents.isDestroyed()?t.url:(t.view.webContents.getURL()||t.url))});if(closedTabs.length>20)closedTabs.shift();tabs.splice(i,1);
  win.contentView.removeChildView(t.view);t.view.webContents.close();if(t.vpn)dropTunnel(t.pid);
  if(active===id)setActive(tabs.length?tabs[Math.max(0,i-1)].id:null);layout();pushTabs();
  if(!tabs.length&&windows.filter(x=>!x.dead).length>1)win.close();
+ focusSoon();
 }
 const norm=s=>{s=s.trim();if(!s)return homeUrl();if(/^[a-z]+:\/\//i.test(s))return s;return /^[^\s]+\.[^\s]{2,}$/.test(s)||/^localhost(:\d+)?/.test(s)?'https://'+s:searchUrl()+encodeURIComponent(s)};
 
@@ -216,8 +273,7 @@ async function launch(id){
  const p=prof(id);if(!p||running.has(id))return;
  const chrome=findFile(path.join(RES,'engine'),'chrome.exe');if(!chrome)throw new Error('Движок не найден (resources/engine)');
  const job={};let proxy=null;
- if(needsTunnel(p)){const t=await makeTunnel(p,'e-');job.wp=t.wp;job.conf=t.conf;
-  if(!await t.ready){const e=t.err();cleanup(job);throw new Error('Не удалось подключиться: '+e)}proxy=`socks5://127.0.0.1:${t.port}`}
+ if(needsTunnel(p)){const t=await ensureTunnel(p,'e-',o=>makeTunnel(p,'e-',o),()=>{});job.wp=t.wp;job.conf=t.conf;proxy=`socks5://127.0.0.1:${t.port}`}
  else if(p.proxy)proxy=`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`;
  try{setChromiumDownloadDir(id,p)}catch(e){log('chromium download dir: '+e.message)}
  const args=[`--user-data-dir=${path.join(DATA(),'profiles',id)}`,`--fingerprint=${p.seed}`,'--no-first-run','--no-default-browser-check','--restore-last-session'];
@@ -229,15 +285,28 @@ async function launch(id){
 
 // ---------- сохранение и восстановление вкладок ----------
 const SESS=()=>path.join(DATA(),'session.json');
+function windowState(W){
+ let bounds=null;try{bounds=W.win.getBounds()}catch{}
+ return{uid:W.uid,mode:W.mode,active:W.tabs.findIndex(t=>t.id===W.active),bounds,
+  tabs:W.tabs.map(t=>({pid:t.pid,pinned:!!t.pinned,kind:t.kind||'',url:t.kind?'':(t.view.webContents.isDestroyed()?t.url:(t.view.webContents.getURL()||t.url))}))};
+}
 function saveSession(){
  if(restoring||quitting)return;
- const data={enhanced:[...running.keys()],windows:windows.filter(W=>!W.dead&&!W.incognito).map(W=>({mode:W.mode,active:W.tabs.findIndex(t=>t.id===W.active),
-  bounds:(()=>{try{return W.win.getBounds()}catch{return null}})(),
-  tabs:W.tabs.map(t=>({pid:t.pid,pinned:!!t.pinned,kind:t.kind||'',url:t.kind?'':(t.view.webContents.getURL()||t.url)}))}))};
- const w0=data.windows[0];if(w0){data.mode=w0.mode;data.active=w0.active;data.tabs=w0.tabs}   // совместимость со старым форматом
+ const alive=windows.filter(W=>!W.dead&&!W.incognito).map(windowState),ids=new Set(alive.map(x=>x.uid)),now=Date.now();
+ const extra=recentClosed.filter(x=>now-x.t<8000&&!ids.has(x.state.uid)).map(x=>x.state);   // окна, закрытые перед выходом, тоже вернутся
+ const all=[...alive,...extra],w0=all[0],data={enhanced:[...running.keys()],windows:all};
+ if(w0){data.mode=w0.mode;data.active=w0.active;data.tabs=w0.tabs}
  try{fs.writeFileSync(SESS(),JSON.stringify(data))}catch{}
 }
 function saveSoon(){clearTimeout(saveT);saveT=setTimeout(saveSession,500)}
+async function fillWindow(W,w,ids){
+ ids=ids||new Set(load().map(p=>p.id));useW(W);if(w.mode==='side')setMode('side');
+ let target=null;
+ for(let i=0;i<(w.tabs||[]).length;i++){const x=w.tabs[i];let t=null;
+  try{if(x.kind&&PAGES[x.kind])t=openPage(x.kind,true);else if(!x.kind&&ids.has(x.pid))t=await newTab(x.pid,x.url,true)}catch(e){log('restore tab: '+e.message)}
+  useW(W);if(t&&x.pinned)t.pinned=true;if(t&&i===w.active)target=t}
+ const pick=target||W.tabs[0];if(pick)setActive(pick.id);layout();pushTabs();
+}
 async function restoreSession(){
  let s=null;
  try{
@@ -246,16 +315,7 @@ async function restoreSession(){
   const wins=s&&Array.isArray(s.windows)&&s.windows.length?s.windows:(s&&Array.isArray(s.tabs)?[{mode:s.mode,active:s.active,tabs:s.tabs}]:[]);
   log('restore: '+wins.map(w=>w.tabs.length).join('+')+' tabs in '+wins.length+' windows, '+((s&&s.enhanced)||[]).length+' enhanced'+(cfg.restore?'':' (disabled)'));
   const ids=new Set(load().map(p=>p.id)),first=windows[0];
-  for(let wi=0;wi<wins.length;wi++){
-   const w=wins[wi],W=wi===0?first:createWindow({bounds:w.bounds});
-   useW(W);if(w.mode==='side')setMode('side');
-   let target=null;
-   for(let i=0;i<(w.tabs||[]).length;i++){const x=w.tabs[i];let t=null;
-    try{if(x.kind&&PAGES[x.kind])t=openPage(x.kind,true);else if(!x.kind&&ids.has(x.pid))t=await newTab(x.pid,x.url,true)}catch(e){log('restore tab: '+e.message)}
-    useW(W);if(t&&x.pinned)t.pinned=true;if(t&&i===w.active)target=t}
-   const pick=target||tabs[0];if(pick)setActive(pick.id);
-   layout();pushTabs();
-  }
+  for(let wi=0;wi<wins.length;wi++){const w=wins[wi],W=wi===0?first:createWindow({bounds:w.bounds});await fillWindow(W,w,ids)}
   useW(first);
   if(!first.tabs.length&&!ids.size)openPage('manager');
   layout();pushTabs();
@@ -345,7 +405,7 @@ function showPanel(){
  if(!panel){panel=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true});
   panel.webContents.loadFile('ui/downloads.html');
   panel.webContents.on('blur',()=>{if(panelOpen&&Date.now()-panelShownAt>200){hidePanel();lastBlurHide=Date.now()}});
-  panel.webContents.on('before-input-event',(e,i)=>{if(i.type==='keyDown'&&i.key==='Escape'){hidePanel();e.preventDefault()}})}
+  panel.webContents.on('before-input-event',(e,i)=>{if(i.type==='keyDown'&&i.key==='Escape'){hidePanel();focusSoon();e.preventDefault()}else if(overlayW&&useW(overlayW)&&hotkey(i,panel.webContents))e.preventDefault()})}
  attach(panel);panel.setBounds(panelBounds());panel.setVisible(true);panelOpen=true;panelShownAt=Date.now();
  panel.webContents.focus();if(!panel.webContents.isLoading())panel.webContents.send('downloads',dlList());
 }
@@ -364,7 +424,7 @@ function addHistory(pid,url){
  const h={id:uid(),pid,url,title:'',t:Date.now()};history.unshift(h);if(history.length>5000)history.length=5000;saveHistSoon();return h;
 }
 function pushBm(){
- const st={list:bookmarks.map(b=>({id:b.id,title:b.title,url:b.url,folder:b.folder||''})),bar:!!cfg.bmBar};
+ const st={list:bookmarks.map(b=>({id:b.id,title:b.title,url:b.url,folder:b.folder||''})),bar:barRow(),chips:!!cfg.bmBar};
  for(const W of windows){if(W.dead)continue;if(!W.win.webContents.isDestroyed())W.win.webContents.send('bm-state',st);
   for(const t of W.tabs)if(t.kind==='bookmarks'&&!t.view.webContents.isDestroyed())t.view.webContents.send('bm-changed')}
 }
@@ -391,7 +451,7 @@ function showMenu(items,anchor,opts={}){
  menuPayload={items:out,search:!!opts.search,placeholder:opts.placeholder||'',suggest:!!opts.suggest};menuW=opts.width||270;menuAnchor=anchor||cursorAnchor();
  if(!menuV){menuV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});menuV.webContents.loadFile('ui/menu.html');
   menuV.webContents.on('blur',()=>{if(menuOpen&&Date.now()-menuShownAt>200){hideMenu();lastMenuBlur=Date.now()}});
-  menuV.webContents.on('before-input-event',(e,i)=>{if(i.type==='keyDown'&&i.key==='Escape'){hideMenu();e.preventDefault()}})}
+  menuV.webContents.on('before-input-event',(e,i)=>{if(i.type==='keyDown'&&i.key==='Escape'){hideMenu();focusSoon();e.preventDefault()}else if(!menuPayload.suggest&&overlayW&&useW(overlayW)&&hotkey(i,menuV.webContents))e.preventDefault()})}
  attach(menuV);menuV.setBounds(menuBounds(menuW,120));menuV.setVisible(true);menuOpen=true;menuShownAt=Date.now();
  if(!opts.noFocus)menuV.webContents.focus();if(!menuV.webContents.isLoading())menuV.webContents.send('menu',menuPayload);
 }
@@ -410,6 +470,7 @@ function mainMenu(anchor){
  const t=cur();
  showMenu([
   {label:'Новая вкладка',hint:'Ctrl+T',fn:()=>{if(t&&!t.kind)newTab(t.pid,undefined,false,t.id);else profileMenu()}},
+  {label:'Вернуть закрытую вкладку или окно',hint:'Ctrl+Shift+T',fn:()=>reopenTab()},
   {label:'Новое окно',hint:'Ctrl+N',fn:()=>newWindowFlow()},
   {label:'Новое окно инкогнито',hint:'Ctrl+Shift+N',fn:()=>incognitoFlow()},
   {label:'Поиск по вкладкам',hint:'Ctrl+Shift+A',fn:()=>tabSearch()},
@@ -417,7 +478,7 @@ function mainMenu(anchor){
   {label:'Закладки',hint:'Ctrl+Shift+O',fn:()=>openPage('bookmarks')},
   {label:'История',hint:'Ctrl+H',fn:()=>openPage('history')},
   {label:'Загрузки',hint:'Ctrl+J',fn:()=>togglePanel()},
-  ...(t&&!t.kind?[{label:t.translated?'Показать оригинал':'Перевести страницу',fn:()=>translateToggle(t)}]:[]),
+  ...(t&&!t.kind?[{label:t.translated?'Показать оригинал':'Перевести страницу',fn:()=>translateToggle(t)},{label:(darkWanted(t.view.webContents.getURL())?'Выключить':'Включить')+' тёмную тему этого сайта',fn:()=>toggleSiteDark(t)}]:[]),
   {type:'sep'},
   {label:'Скрипты',fn:()=>openPage('scripts')},
   {label:'Расширения',fn:()=>openPage('extensions')},
@@ -432,10 +493,18 @@ function mainMenu(anchor){
 
 // ---------- горячие клавиши ----------
 const cur=()=>tabs.find(x=>x.id===active),pageWc=()=>{const t=cur();return t&&!t.kind?t.view.webContents:null};
-function goTab(t){if(t){setActive(t.id);layout();pushTabs()}}
+function focusActive(){   // вернуть клавиатуру странице после смены вкладки, закрытия меню или диалога
+ if(!win||win.isDestroyed()||!win.isFocused())return;const t=cur();
+ try{if(t&&t.ready!==false)t.view.webContents.focus();else win.webContents.focus()}catch{}
+}
+function focusSoon(){const W0=curW;setImmediate(()=>{if(W0&&!W0.dead&&useW(W0))focusActive()})}
+function goTab(t){if(t){setActive(t.id);layout();pushTabs();focusSoon()}}
 function cycle(d){if(tabs.length<2)return;const i=tabs.findIndex(x=>x.id===active);goTab(tabs[(i+d+tabs.length)%tabs.length])}
 function zoom(d){const w=pageWc();if(w)w.setZoomLevel(d===0?0:Math.max(-3,Math.min(5,w.getZoomLevel()+d*0.5)))}
-function reopenTab(){const c=closedTabs.pop();if(!c)return;if(c.kind&&PAGES[c.kind])openPage(c.kind);else newTab(c.pid,c.url)}
+function reopenTab(){   // Ctrl+Shift+T: вернуть закрытую вкладку или закрытое окно
+ const c=closedTabs.pop();if(!c)return;
+ if(c.type==='window'){const ri=recentClosed.findIndex(x=>x.state.uid===c.state.uid);if(ri>=0)recentClosed.splice(ri,1);const W=createWindow({bounds:c.state.bounds,instant:true});useW(W);fillWindow(W,c.state);return}
+ if(c.kind&&PAGES[c.kind])openPage(c.kind);else newTab(c.pid,c.url)}
 function hotkey(i,wc){
  if(i.type!=='keyDown'||(i.control&&i.alt))return false;
  const c=i.control||i.meta,sh=i.shift,al=i.alt,k=i.key,cd=i.code||'';
@@ -504,7 +573,7 @@ function pushToast(){if(toastOpen&&toastV&&!toastV.webContents.isDestroyed())toa
 function hideToast(){dropOverlay(toastV);toastOpen=false;clearTimeout(toastT)}
 function showToast(id,ms){
  if(panelOpen||menuOpen||!win||win.isDestroyed())return;toastId=id;
- if(!toastV){toastV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});toastV.webContents.loadFile('ui/toast.html')}
+ if(!toastV){toastV=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true,backgroundThrottling:false});toastV.webContents.loadFile('ui/toast.html');toastV.webContents.on('before-input-event',(e,i)=>{if(overlayW&&useW(overlayW)&&hotkey(i,toastV.webContents))e.preventDefault()})}
  attach(toastV);toastV.setBounds(toastBounds());toastV.setVisible(true);toastOpen=true;pushToast();
  clearTimeout(toastT);toastT=setTimeout(()=>{if(!toastHover)hideToast()},ms||5000);
 }
@@ -562,6 +631,7 @@ const BUILTIN=[
   code:"let last=performance.now();const sp=Number(MB.params.speed)||40;const f=t=>{window.scrollBy(0,sp*(t-last)/1000);last=t;requestAnimationFrame(f)};requestAnimationFrame(f);"}
 ];
 const allScripts=()=>[...BUILTIN,...scripts.map(x=>({...x,builtin:false,type:x.type==='autoclick'?'autoclick':'js'}))];
+function favList(p){const ids=cfg.favScripts||[];if(!ids.length)return[];const all=allScripts(),en=p?enabledIds(p):[];return ids.map(id=>{const sc=all.find(x=>x.id===id);return sc?{id,name:sc.name,on:en.includes(id)}:null}).filter(Boolean)}
 const enabledIds=p=>[...new Set([...(p.scripts||[]),...(p.presets||[]).map(x=>'b-'+x)])];
 function scriptParams(sc,p){
  const o={};for(const x of sc.params||[])o[x.key]=x.def;const c=(p.scriptCfg||{})[sc.id];if(c)Object.assign(o,c);
@@ -615,7 +685,7 @@ function appDialog(o){
   dlgs.set(id,{w,res});
   w.loadFile('ui/dialog.html',{query:{id:String(id),p:JSON.stringify({title:o.title||'MultiBrowser',message:String(o.message||''),detail:String(o.detail||''),input:o.input||'',buttons:o.buttons||['OK'],type:o.type||'info',defaultId:o.defaultId||0,cancelId:o.cancelId})}});
   w.once('ready-to-show',()=>w.show());
-  w.on('closed',()=>{const d=dlgs.get(id);if(d){dlgs.delete(id);res({response:o.cancelId!=null?o.cancelId:(o.buttons?o.buttons.length-1:0)})}});
+  w.on('closed',()=>{const d=dlgs.get(id);if(d){dlgs.delete(id);res({response:o.cancelId!=null?o.cancelId:(o.buttons?o.buttons.length-1:0)})}setTimeout(()=>{const W2=windows.find(x=>!x.dead);if(W2&&useW(W2))focusActive()},100)});
  });
 }
 
@@ -777,7 +847,7 @@ function ctxMenu(t,pr){
  else if(sel)items.push({label:'Копировать',hint:'Ctrl+C',fn:()=>wc.copy()},{label:'Найти «'+cut(sel)+'» в поиске',fn:()=>newTab(t.pid,searchUrl()+encodeURIComponent(sel),cfg.openBg!==false,t.id)},{label:'Перевести выделенное на '+(LANGS[cfg.translateTo]||'русский'),fn:()=>translateSelection(t,sel)},{type:'sep'});
  if(!link&&!img&&!sel&&!pr.isEditable){const nh=wc.navigationHistory;
   items.push({label:'Назад',hint:'Alt+←',disabled:!nh.canGoBack(),fn:()=>nh.goBack()},{label:'Вперёд',hint:'Alt+→',disabled:!nh.canGoForward(),fn:()=>nh.goForward()},{label:'Обновить',hint:'F5',fn:()=>wc.reload()},{type:'sep'})}
- items.push({label:t.translated?'Показать оригинал':'Перевести на '+(LANGS[cfg.translateTo]||'русский'),fn:()=>translateToggle(t)},
+ items.push({label:t.translated?'Показать оригинал':'Перевести на '+(LANGS[cfg.translateTo]||'русский'),fn:()=>translateToggle(t)},{label:(darkWanted(wc.getURL())?'Выключить':'Включить')+' тёмную тему сайта',fn:()=>toggleSiteDark(t)},
   {label:'Печать…',hint:'Ctrl+P',fn:()=>wc.print()},{label:'Просмотр кода страницы',hint:'Ctrl+U',fn:()=>newTab(t.pid,'view-source:'+wc.getURL())},{label:'Исследовать элемент',hint:'F12',fn:()=>wc.inspectElement(pr.x,pr.y)});
  showMenu(items,{x:vb.x+pr.x,y:vb.y+pr.y,align:'left'});
 }
@@ -793,12 +863,12 @@ function moveTabToWindow(t,from,to,idx){
  useW(from);const i=tabs.indexOf(t);if(i<0)return;
  tabs.splice(i,1);try{win.contentView.removeChildView(t.view)}catch{}
  if(active===t.id)setActive(tabs.length?tabs[Math.max(0,i-1)].id:null);layout();pushTabs();
- t.W=to;useW(to);tabs.splice(idx==null?tabs.length:idx,0,t);setActive(t.id);win.contentView.addChildView(t.view);layout();pushTabs();to.win.focus();
+ t.W=to;useW(to);tabs.splice(idx==null?tabs.length:idx,0,t);setActive(t.id);win.contentView.addChildView(t.view);layout();pushTabs();to.win.focus();focusSoon();
  if(!from.tabs.length&&!from.dead&&windows.filter(x=>!x.dead).length>1)from.win.close();
 }
 
 // ---------- вкладки: поиск, закрепление, окна инкогнито, очистка ----------
-function focusTab(W,t){if(!useW(W))return;setActive(t.id);layout();pushTabs();try{if(W.win.isMinimized())W.win.restore();W.win.focus()}catch{}}
+function focusTab(W,t){if(!useW(W))return;setActive(t.id);layout();pushTabs();focusSoon();try{if(W.win.isMinimized())W.win.restore();W.win.focus()}catch{}}
 function tabSearch(anchor){
  const items=[];
  for(const W of windows){if(W.dead)continue;for(const t of W.tabs){const p=t.kind?null:prof(t.pid),title=t.kind?PAGES[t.kind].title:(t.title||t.url||'Новая вкладка');
@@ -999,7 +1069,7 @@ H('remove',(e,id)=>{const ctx=curW;for(const W of [...windows]){if(W.dead)contin
 H('openInShell',(e,id)=>newTab(id));
 H('newTab',(e,id)=>newTab(id));
 H('newTabMenu',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;profileMenu(a)});
-H('activate',(e,id)=>{if(curW)curW.anchor=null;setActive(id);layout();pushTabs()});
+H('activate',(e,id)=>{if(curW)curW.anchor=null;setActive(id);layout();pushTabs();focusSoon()});
 H('closeTab',(e,id)=>closeTab(id));
 H('navigate',(e,s)=>{const t=tabs.find(x=>x.id===active);if(t&&!t.kind)t.view.webContents.loadURL(norm(s))});
 H('nav',(e,a)=>{const t=tabs.find(x=>x.id===active);if(!t||t.kind)return;const h=t.view.webContents.navigationHistory;
@@ -1009,7 +1079,7 @@ function openPage(kind,bg){   // внутренние страницы («Про
  const def=PAGES[kind],ex=tabs.find(x=>x.kind===kind);if(ex){if(!bg){setActive(ex.id);layout();pushTabs()}return ex}
  const v=mkView({preload:path.join(__dirname,'preload.js'),contextIsolation:true});
  const t={id:nextId++,pid:def.pid,kind,view:v,title:def.title,url:'',ready:false,W:curW};tabs.push(t);
- const rdy=()=>{if(!t.ready&&useW(t.W)){t.ready=true;layout();pushTabs()}};
+ const rdy=()=>{if(!t.ready&&useW(t.W)){t.ready=true;layout();pushTabs();if(t.id===active)focusSoon()}};
  v.webContents.once('did-finish-load',rdy);setTimeout(rdy,2500);
  v.webContents.on('before-input-event',(e,i)=>{if(useW(t.W)&&hotkey(i,v.webContents))e.preventDefault()});
  win.contentView.addChildView(v);if(!bg||active===null)setActive(t.id);v.webContents.loadFile(def.file);layout();pushTabs();return t;
@@ -1073,7 +1143,7 @@ H('histClear',()=>{history=[];saveHistNow()});
 H('showMenu',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;mainMenu(a)});
 H('menuGet',()=>menuPayload);
 H('menuResize',(e,h)=>{if(menuOpen&&menuV)menuV.setBounds(menuBounds(menuW,h))});
-H('menuPick',(e,arg)=>{const id=typeof arg==='string'?arg:(arg&&arg.id),mid=!!(arg&&typeof arg==='object'&&arg.mid),f=(mid&&menuAlts.get(id))||menuActs.get(id);hideMenu();if(f)setTimeout(f,0)});
+H('menuPick',(e,arg)=>{const id=typeof arg==='string'?arg:(arg&&arg.id),mid=!!(arg&&typeof arg==='object'&&arg.mid),f=(mid&&menuAlts.get(id))||menuActs.get(id);hideMenu();focusSoon();if(f)setTimeout(f,0)});
 H('checkConn',(e,id)=>checkConn(id));
 H('applyGeo',(e,{id,tz,lang})=>{const l=load(),p=l.find(x=>x.id===id);if(!p)return false;if(tz)p.tz=tz;else delete p.tz;if(lang)p.lang=lang;else delete p.lang;save(l);pushMgr();return true});
 H('toastGet',()=>toastItem());
@@ -1085,10 +1155,12 @@ H('toastAction',(e,{action,id})=>{
  const d=downloads.find(x=>x.id===id);if(!d)return;const it=live.get(id);
  if(action==='open')shell.openPath(d.path);else if(action==='show')shell.showItemInFolder(d.path);else if(action==='cancel'&&it)it.cancel();
  if(action!=='cancel')hideToast()});
-H('scList',()=>allScripts());
+H('scList',()=>allScripts().map(x=>({...x,fav:(cfg.favScripts||[]).includes(x.id)})));
+H('scFav',(e,{sid,on})=>{const set=new Set(cfg.favScripts||[]);if(on)set.add(sid);else set.delete(sid);cfg.favScripts=[...set];saveCfg();const c0=curW;for(const W of windows){if(W.dead)continue;useW(W);layout();pushTabs();pushBm()}if(c0&&!c0.dead)useW(c0);return true});
 H('scProfiles',()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),enabled:enabledIds(p),cfg:p.scriptCfg||{}})));
 H('scToggle',(e,{sid,pid,on})=>{const l=load(),p=l.find(x=>x.id===pid);if(!p)return false;
- const ids=enabledIds(p).filter(x=>x!==sid);if(on)ids.push(sid);p.scripts=ids;delete p.presets;save(l);reloadProfileTabs(pid);pushMgr();return true});
+ const ids=enabledIds(p).filter(x=>x!==sid);if(on)ids.push(sid);p.scripts=ids;delete p.presets;save(l);reloadProfileTabs(pid);pushMgr();pushTabsAll();return true});
+function pushTabsAll(){const c0=curW;for(const W of windows){if(W.dead)continue;useW(W);pushTabs()}if(c0&&!c0.dead)useW(c0)}
 H('scCfg',(e,{sid,pid,cfg})=>{const l=load(),p=l.find(x=>x.id===pid);if(!p)return false;p.scriptCfg=p.scriptCfg||{};
  if(cfg&&Object.keys(cfg).length)p.scriptCfg[sid]=cfg;else delete p.scriptCfg[sid];save(l);reloadProfileTabs(pid);return true});
 H('scSave',(e,sc)=>{if(!sc||!(sc.name||'').trim())return null;let x=scripts.find(s=>s.id===sc.id);if(!x){x={id:uid()};scripts.push(x)}
@@ -1100,7 +1172,7 @@ H('scSave',(e,sc)=>{if(!sc||!(sc.name||'').trim())return null;let x=scripts.find
  saveScripts();for(const p of load())if(enabledIds(p).includes(x.id))reloadProfileTabs(p.id);return x.id});
 H('scDup',(e,sid)=>{const s0=allScripts().find(x=>x.id===sid);if(!s0)return null;
  const x={id:uid(),name:s0.name+' (копия)',desc:s0.desc||'',type:s0.type,match:s0.match||['*'],runAt:s0.runAt||'dom-ready',code:s0.code||'',params:JSON.parse(JSON.stringify(s0.params||[]))};scripts.push(x);saveScripts();return x.id});
-H('scDelete',(e,id)=>{scripts=scripts.filter(s=>s.id!==id);saveScripts();const l=load();let ch=false;
+H('scDelete',(e,id)=>{scripts=scripts.filter(s=>s.id!==id);saveScripts();cfg.favScripts=(cfg.favScripts||[]).filter(x=>x!==id);saveCfg();const l=load();let ch=false;
  for(const p of l){if(p.scripts&&p.scripts.includes(id)){p.scripts=p.scripts.filter(x=>x!==id);ch=true}if(p.scriptCfg&&p.scriptCfg[id]){delete p.scriptCfg[id];ch=true}}if(ch)save(l)});
 H('openScripts',()=>{openPage('scripts')});
 H('importProfiles',(e,text)=>{const l=load(),bad=[];let n=0;
@@ -1245,9 +1317,14 @@ function createWindow(o={}){
  w.webContents.on('before-input-event',(e,i)=>{if(useW(W)&&hotkey(i,w.webContents))e.preventDefault()});
  w.webContents.on('did-finish-load',c(()=>{layout();pushTabs();pushBm();if(W.first&&!started){started=true;restoreSession()}}));
  for(const ev of ['resize','maximize','unmaximize','enter-full-screen','leave-full-screen'])w.on(ev,c(layout));
- w.on('close',()=>{if(!windows.some(x=>!x.dead&&x!==W)&&useW(W)){saveSession();quitting=true}});
+ w.on('close',()=>{
+  if(W.incognito)return;
+  const othersN=windows.some(x=>!x.dead&&x!==W&&!x.incognito);
+  if(W.tabs.length){const st=windowState(W);recentClosed.push({t:Date.now(),state:st});if(recentClosed.length>10)recentClosed.shift();
+   if(othersN){closedTabs.push({type:'window',state:st});if(closedTabs.length>30)closedTabs.shift()}}
+  if(!othersN&&useW(W))saveSession();});
  w.on('closed',()=>{W.dead=true;const i=windows.indexOf(W);if(i>=0)windows.splice(i,1);
-  if(!windows.length)app.quit();else{if(curW===W)useW(windows[windows.length-1]);if(!quitting)saveSoon()}});
+  if(!windows.length){quitting=true;app.quit()}else{if(curW===W)useW(windows[windows.length-1]);if(!quitting&&windows.some(x=>!x.incognito))saveSoon()}});
  useW(W);return W;
 }
 app.whenReady().then(()=>{

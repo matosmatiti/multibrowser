@@ -35,7 +35,7 @@ function startDrag(e,t,d){
 function setDot(d,icon,fb){if(icon&&icon.startsWith('img:')){d.textContent='';d.style.background='transparent';const im=document.createElement('img');im.src=icon.slice(4);d.append(im)}else if(icon&&icon.startsWith('emoji:'))d.textContent=icon.slice(6);else d.textContent=icon||fb}
 function tab(t,w){const cmp=w&&w<110&&!t.pinned;
  const d=el('div',null,'tab'+(t.id===S.active?' act':'')+(cmp?' cmp':'')+(t.pinned?' pin':'')+(selected.has(t.id)?' sel':'')+((t.audible&&!t.muted)?' aud':'')+(seen.has(t.id)?'':' new'));d.style.setProperty('--c',t.color);d.title=t.title;
- const dot=el('span',null,'dot');setDot(dot,t.kindIcon||(S.icons&&S.icons[t.pid]),t.letter);d.append(dot,el('span',t.title,'ttl'));
+ let lead=el('span',null,'dot');setDot(lead,t.kindIcon||(S.icons&&S.icons[t.pid]),t.letter);if(t.loading){lead=el('span',null,'spin');lead.style.setProperty('--c',t.color)}d.append(lead,el('span',t.title,'ttl'));
  if(t.audible||t.muted){const a=el('button',null,'au');a.innerHTML=t.muted?MUT:SPK;a.title=t.muted?'Включить звук':'Отключить звук';a.onclick=e=>{e.stopPropagation();api.muteTab(t.id)};a.onpointerdown=e=>e.stopPropagation();d.append(a)}
  const x=el('button',null,'x');x.innerHTML=XI;x.title='Закрыть (Ctrl+W)';x.onclick=e=>{e.stopPropagation();api.closeTab(t.id)};d.append(x);
  d.onclick=e=>{if(suppress)return;
@@ -51,19 +51,24 @@ function render(){
  $('star').classList.toggle('on',!!S.starred);$('back').disabled=!S.canBack;$('fwd').disabled=!S.canFwd;$('incb').hidden=!S.incognito;
  $('shc').textContent=S.blocked>0?(S.blocked>99?'99+':String(S.blocked)):'';$('shield').classList.toggle('off',!S.adOn);
  $('shield').title=S.adOn?'Блокировка рекламы и трекеров включена. Заблокировано на странице: '+(S.blocked||0):'Блокировка выключена (нажми, чтобы включить)';
- $('empty').classList.toggle('on',!S.tabs.length);$('ph').classList.toggle('on',!!S.waiting);$('lbar').classList.toggle('on',!!S.loading);
+ $('empty').classList.toggle('on',!S.tabs.length&&!S.busy);$('pht').textContent=S.busy||'Открываю страницу…';$('ph').classList.toggle('on',!!S.waiting);$('lbar').classList.toggle('on',!!S.loading);
  // панель закладок и вкладки перестраиваются только при изменении данных (иначе клики теряются при частых обновлениях)
- const bk=JSON.stringify([BM,S.mode]);
+ const bk=JSON.stringify([BM,S.mode,S.favs,S.apid]);
  if(bk!==lastBm){lastBm=bk;const B=$('bmbar');B.hidden=!BM.bar;B.replaceChildren();
-  if(BM.bar){const folders=[...new Set(BM.list.map(b=>b.folder).filter(Boolean))];
-   for(const b of BM.list.filter(b=>!b.folder)){const x=el('button',b.title||b.url,'bm');x.title=b.url;x.onclick=()=>api.bmOpenBar({url:b.url});
-    x.onauxclick=e=>{if(e.button===1){e.preventDefault();api.bmOpenBar({url:b.url,newTab:true})}};
-    x.oncontextmenu=e=>{e.preventDefault();api.bmChipMenu({id:b.id,anchor:{x:e.clientX,y:e.clientY,align:'left'}})};B.append(x)}
-   for(const f of folders){const x=el('button','▾ '+f,'bm fd');x.onclick=e=>{const r=e.currentTarget.getBoundingClientRect();api.bmFolderMenu({name:f,anchor:{x:r.left,y:r.bottom+4,align:'left'}})};B.append(x)}
-   if(!BM.list.length)B.append(el('span','Закладок пока нет: нажми ☆ в адресной строке','m'))}}
+  if(BM.bar){
+   if(BM.chips){const folders=[...new Set(BM.list.map(b=>b.folder).filter(Boolean))];
+    for(const b of BM.list.filter(b=>!b.folder)){const x=el('button',b.title||b.url,'bm');x.title=b.url;x.onclick=()=>api.bmOpenBar({url:b.url});
+     x.onauxclick=e=>{if(e.button===1){e.preventDefault();api.bmOpenBar({url:b.url,newTab:true})}};
+     x.oncontextmenu=e=>{e.preventDefault();api.bmChipMenu({id:b.id,anchor:{x:e.clientX,y:e.clientY,align:'left'}})};B.append(x)}
+    for(const f of folders){const x=el('button','▾ '+f,'bm fd');x.onclick=e=>{const r=e.currentTarget.getBoundingClientRect();api.bmFolderMenu({name:f,anchor:{x:r.left,y:r.bottom+4,align:'left'}})};B.append(x)}
+    if(!BM.list.length)B.append(el('span','Закладок пока нет: нажми ☆ в адресной строке','m'))}
+   B.append(el('span',null,'bsp'));
+   for(const f of S.favs||[]){const x=el('button',(f.on?'● ':'○ ')+f.name,'fv'+(f.on?' on':''));x.disabled=!S.apid;
+    x.title=(f.on?'Скрипт включён: нажми, чтобы выключить':'Скрипт выключен: нажми, чтобы включить')+' для этого профиля (его страницы обновятся)';
+    x.onclick=()=>api.scToggle({sid:f.id,pid:S.apid,on:!f.on});B.append(x)}}}
  for(const id of [...selected])if(!S.tabs.some(x=>x.id===id))selected.delete(id);
  const ik=Object.keys(S.icons||{}).map(k=>k+':'+(S.icons[k]||'').length).join();
- const key=JSON.stringify([ik,[...selected],S.mode,S.active,w,S.tabs.map(t=>[t.id,t.title,t.color,t.letter,t.audible,t.muted,t.pinned]),side?S.profiles:0]);
+ const key=JSON.stringify([ik,[...selected],S.mode,S.active,w,S.tabs.map(t=>[t.id,t.title,t.color,t.letter,t.audible,t.muted,t.pinned,t.loading]),side?S.profiles:0]);
  if(key===lastKey||dragging)return;lastKey=key;
  const T=$('tabs'),G=$('groups');T.replaceChildren();G.replaceChildren();
  if(!side){for(const t of S.tabs)T.append(tab(t,w));const act=T.querySelector('.act');if(act)act.scrollIntoView({block:'nearest',inline:'nearest'})}

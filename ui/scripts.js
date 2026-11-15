@@ -8,12 +8,14 @@ const EX={
 let msgT=null;const msg=t=>{$('msg').textContent=t;clearTimeout(msgT);msgT=setTimeout(()=>{$('msg').textContent=''},2500)};
 const paramsToText=a=>(a||[]).map(p=>[p.key,p.label||p.key,p.type||'text',String(p.def==null?'':p.def).replace(/\n/g,'\\n')].join(' | ')).join('\n');
 const textToParams=t=>t.split(/\r?\n/).map(l=>l.trim()).filter(Boolean).map(l=>{const [key,label,type,...d]=l.split('|').map(x=>x.trim());return{key,label:label||key,type:['number','bool'].includes(type)?type:'text',def:d.join('|').replace(/\\n/g,'\n')}});
-async function load(){lib=await api.scList();profs=await api.scProfiles();drawList();if(cur&&cur.id){const s=lib.find(x=>x.id===cur.id);if(s){cur=s;drawProfiles(s)}}}
+async function load(){lib=await api.scList();profs=await api.scProfiles();drawList();if(cur&&cur.id){const s=lib.find(x=>x.id===cur.id);if(s){cur=s;drawProfiles(s);favUi(s)}}}
+function favUi(s){$('favb').hidden=!s.id;$('favb').textContent=s.fav?'★ В избранном':'☆ В избранное'}
+$('favb').onclick=async()=>{if(!cur||!cur.id)return;await api.scFav({sid:cur.id,on:!cur.fav});await load()};
 function drawList(){const q=$('sq').value.trim().toLowerCase(),L=$('list');L.replaceChildren();
  for(const [t,list] of [['Готовые',lib.filter(x=>x.builtin)],['Мои',lib.filter(x=>!x.builtin)]]){
   const f=list.filter(x=>!q||((x.name||'')+' '+(x.desc||'')).toLowerCase().includes(q));if(!f.length)continue;L.append(el('div',t,'gh'));
   for(const s of f){const n=profs.filter(p=>p.enabled.includes(s.id)).length,b=el('button',null,'sc'+(cur&&cur.id===s.id?' on':''));
-   b.append(el('span',s.name,'nm'),el('span',n?String(n):'','cnt'));b.title=s.desc||'';b.onclick=()=>show(s);L.append(b)}}}
+   b.append(el('span',(s.fav?'★ ':'')+s.name,'nm'),el('span',n?String(n):'','cnt'));b.title=s.desc||'';b.onclick=()=>show(s);L.append(b)}}}
 function field(prm,val,onch){const w=el('label',null,'pf');w.append(el('span',prm.label||prm.key,'pl'));let i;
  if(prm.type==='bool'){i=el('input');i.type='checkbox';i.checked=val===true||val==='true'}
  else if(prm.type==='number'){i=el('input');i.type='number';i.step='any';i.value=val}
@@ -34,7 +36,7 @@ function drawProfiles(s){const P=$('plist');P.replaceChildren();
    const r=el('button','Сбросить к значениям по умолчанию');r.onclick=async()=>{p.cfg[s.id]={};await api.scCfg({sid:s.id,pid:p.id,cfg:{}});drawProfiles(s);msg('Настройки сброшены')};box.append(r);P.append(box)}}}
 function show(s){cur=s;$('hint').hidden=true;$('ed').hidden=false;$('ttl').textContent=s.name||'Новый скрипт';$('dsc').textContent=s.desc||'';
  $('badge').textContent=s.builtin?'готовый':(s.id?'мой':'новый');$('msg').textContent='';
- $('bi').hidden=!s.builtin;$('own').hidden=!!s.builtin;$('applybox').hidden=!s.id;
+ favUi(s);$('bi').hidden=!s.builtin;$('own').hidden=!!s.builtin;$('applybox').hidden=!s.id;
  if(!s.builtin){$('name').value=s.name||'';$('desc').value=s.desc||'';$('type').value=s.type||'js';$('match').value=(s.match||['*']).join('\n');$('runAt').value=s.runAt||'dom-ready';$('code').value=s.code||'';$('params').value=paramsToText(s.params);typeUi()}
  if(s.id)drawProfiles(s);drawList()}
 function typeUi(){$('jsbox').hidden=$('type').value==='autoclick'}
