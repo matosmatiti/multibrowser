@@ -3,7 +3,9 @@
 <title>Загрузка</title>
 <style>
 :root{color-scheme:light dark;--bg:#fff;--p:#f1f3f8;--t:#1b1f2a;--m:#5b6478;--b:#dde1ea;--a:#2f6fe4;--h:#e3e7f0;--g:#1a8f5a}
-@media(prefers-color-scheme:dark){:root{--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#242a38;--g:#3ecf8e}}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#242a38;--g:#3ecf8e}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#242a38;--g:#3ecf8e}
+:root[data-theme=light]{color-scheme:light}
 html,body{height:100%;margin:0;background:var(--bg);color:var(--t);font:13px/1.4 "Segoe UI",system-ui,sans-serif;overflow:hidden;user-select:none}
 [hidden]{display:none!important}
 #c{height:100%;box-sizing:border-box;border:1px solid var(--b);padding:12px 14px;display:flex;flex-direction:column;gap:8px;cursor:pointer;position:relative}

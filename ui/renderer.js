@@ -17,7 +17,8 @@ function renameFolder(old,row){const i=el('input');i.value=old;row.replaceChildr
  i.onkeydown=e=>{if(e.key==='Enter')fin(true);else if(e.key==='Escape')fin(false)};i.onblur=()=>fin(true)}
 function drawSide(){const F=$('folders');F.replaceChildren();
  const mk=(label,val,n,ed)=>{const row=el('div',null,'f'),b=el('button',null,'fb'+(folder===val?' on':''));b.append(el('span',label),el('span',String(n),'cnt'));b.onclick=()=>{folder=val;draw()};row.append(b);
-  if(ed){const o=el('button','▶','small');o.title='Открыть все профили папки в новом окне';o.onclick=()=>api.openProfiles({ids:all.filter(p=>p.folder===val).map(p=>p.id),newWindow:true});
+  if(ed){const o2=el('button','↗','small');o2.title='Открыть все профили папки в этом окне';o2.onclick=()=>api.openProfiles({ids:all.filter(p=>p.folder===val).map(p=>p.id),newWindow:false});row.append(o2);
+   const o=el('button','▶','small');o.title='Открыть все профили папки в новом окне';o.onclick=()=>api.openProfiles({ids:all.filter(p=>p.folder===val).map(p=>p.id),newWindow:true});
    const r=el('button','✎','small');r.title='Переименовать';r.onclick=()=>renameFolder(val,row);
    const d=el('button','✕','small');d.title='Удалить папку (профили останутся)';d.onclick=async()=>{if(await api.confirm('Удалить папку «'+val+'»? Профили останутся без папки.')){await api.profMeta({ids:all.filter(p=>p.folder===val).map(p=>p.id),folder:''});if(folder===val)folder='*';refresh()}};
    row.append(o,r,d)}F.append(row)};

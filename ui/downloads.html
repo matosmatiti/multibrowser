@@ -3,7 +3,9 @@
 <title>Загрузки</title>
 <style>
 :root{color-scheme:light dark;--bg:#fff;--p:#f3f4f7;--t:#1b1f2a;--m:#5b6478;--b:#d8dce6;--a:#2f6fe4;--h:#e4e7ef}
-@media(prefers-color-scheme:dark){:root{--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#222836}}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#222836}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#222836}
+:root[data-theme=light]{color-scheme:light}
 html,body{height:100%}body{margin:0;font:13px/1.4 "Segoe UI",system-ui,sans-serif;background:var(--bg);color:var(--t);border:1px solid var(--b);box-sizing:border-box;display:flex;flex-direction:column}
 header{display:flex;justify-content:space-between;align-items:center;padding:10px 12px;border-bottom:1px solid var(--b);font-weight:600}
 #list{overflow:auto;flex:1}.it{padding:10px 12px;border-bottom:1px solid var(--b)}.nm{font-weight:600;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}

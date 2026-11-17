@@ -15,17 +15,20 @@
    if(x&&x.includes(low)&&shown(e))out.push(e)}
   return out;
  }
+ const scroller=e=>{for(let n=e.parentElement;n;n=n.parentElement){const s=getComputedStyle(n);if(/(auto|scroll)/.test(s.overflowY)&&n.scrollHeight>n.clientHeight+20)return n}return document.scrollingElement||document.documentElement};
+ const atBottom=e=>{const s=scroller(e);return s.scrollHeight-s.scrollTop-s.clientHeight<260};   // чат прокручен вниз
  const find=t=>findAll(t).find(enabled)||null;
  // Нажимает кнопку, когда она становится АКТИВНОЙ; если станет неактивной и снова активной, нажмёт ещё раз
  function click(t,o){
   o=o||{};const d=o.delay==null?300:o.delay,clicked=new WeakSet();
-  const tick=()=>{for(const e of findAll(t)){
+  const tick=()=>{let list=findAll(t);if(o.last){const e0=list[list.length-1];list=(e0&&atBottom(e0))?[e0]:[]}   // только последняя кнопка и только когда видна нижняя часть страницы
+   for(const e of list){
    if(enabled(e)){if(!clicked.has(e)){clicked.add(e);setTimeout(()=>{try{if(document.contains(e)&&enabled(e))e.click()}catch(_){}},d)}}
    else clicked.delete(e)}};
   tick();const mo=new MutationObserver(tick);mo.observe(document.documentElement,{childList:true,subtree:true,attributes:true});
   const iv=setInterval(tick,700);return()=>{mo.disconnect();clearInterval(iv)};
  }
- const autoclick=rules=>rules.map(r=>click(r.target,{delay:r.delay}));
+ const autoclick=rules=>rules.map(r=>click(r.target,{delay:r.delay,last:r.last}));
  function waitFor(t,timeout){
   return new Promise((res,rej)=>{const t0=Date.now(),tick=()=>{const e=find(t);if(e)return res(e);
    if(Date.now()-t0>(timeout||15000))return rej(new Error('MB.waitFor: не найдено '+t));setTimeout(tick,250)};tick()});

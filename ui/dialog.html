@@ -3,7 +3,9 @@
 <title>MultiBrowser</title>
 <style>
 :root{color-scheme:light dark;--bg:#fff;--p:#f1f3f8;--t:#1b1f2a;--m:#5b6478;--b:#dde1ea;--a:#2f6fe4;--h:#e3e7f0;--r:#d64545}
-@media(prefers-color-scheme:dark){:root{--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#242a38;--r:#ff6b6b}}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#242a38;--r:#ff6b6b}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#181c25;--p:#12151c;--t:#e6e9f0;--m:#8b93a5;--b:#2a3040;--a:#4c8dff;--h:#242a38;--r:#ff6b6b}
+:root[data-theme=light]{color-scheme:light}
 html,body{margin:0;background:var(--bg);color:var(--t);font:13px/1.45 "Segoe UI",system-ui,sans-serif;user-select:none;overflow:hidden}
 #c{box-sizing:border-box;border:1px solid var(--b);padding:0 0 16px;animation:pop .18s ease-out}@keyframes pop{from{opacity:0;transform:scale(.97)}to{opacity:1;transform:none}}
 #drag{height:26px;-webkit-app-region:drag;background:var(--p);border-bottom:1px solid var(--b);display:flex;align-items:center;padding:0 12px;color:var(--m);font-size:12px}

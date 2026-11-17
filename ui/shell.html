@@ -1,9 +1,11 @@
 <!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="color-scheme" content="light dark">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
 <title>MultiBrowser</title>
 <style>
 :root{color-scheme:light dark;--bg:#fff;--p:#f1f3f8;--t:#1b1f2a;--m:#5b6478;--b:#dde1ea;--a:#2f6fe4;--h:#e3e7f0;--ox:0px;--by:82px;--oy:82px}
-@media(prefers-color-scheme:dark){:root{--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--h:#222836}}
+@media(prefers-color-scheme:dark){:root:not([data-theme]){--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--h:#222836}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#12151c;--p:#181c25;--t:#e6e9f0;--m:#8b93a5;--b:#262b37;--a:#4c8dff;--h:#222836}
+:root[data-theme=light]{color-scheme:light}
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--t);font:13px/1.4 "Segoe UI",system-ui,sans-serif;user-select:none}
 svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
@@ -63,6 +65,9 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 .dot{overflow:hidden}.dot img{width:100%;height:100%;object-fit:cover}
 .bsp{flex:1}.fv{border:1px solid var(--b);border-radius:12px;padding:2px 10px;margin-left:4px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis;color:var(--m)}.fv.on{background:var(--a);border-color:var(--a);color:#0b1220;font-weight:600}.fv:disabled{opacity:.4}
 .spin{width:16px;height:16px;border:2px solid var(--b);border-top-color:var(--c,var(--a));border-radius:50%;animation:spin .8s linear infinite;flex:none;margin:0 1px}
+.tab .fav{width:16px;height:16px;border-radius:3px;flex:none;object-fit:contain;pointer-events:none}.tab.cmp .fav{display:none}
+#tabs.dragging .tab:not(.drag){transition:transform .18s cubic-bezier(.2,.8,.2,1),opacity .15s}.tab.drag{z-index:5;box-shadow:0 8px 22px rgba(0,0,0,.45);transform-origin:center;opacity:.97}.tab.mem{opacity:0!important;pointer-events:none}
+.tab.drag[data-n]::after{content:attr(data-n);position:absolute;right:6px;top:-6px;min-width:18px;height:18px;border-radius:9px;background:var(--a);color:#0b1220;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px}
 </style></head><body>
 <div id="top"><div id="tabs"></div><button id="plus" class="ib" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button id="tsearch" class="ib" title="Поиск по вкладкам (Ctrl+Shift+A)" aria-label="Поиск по вкладкам"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg></button><div id="grab"></div></div>
 <div id="side"><div id="brand"></div><div id="groups"></div></div>

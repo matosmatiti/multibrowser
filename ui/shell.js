@@ -6,36 +6,50 @@ const anchor=(e,right)=>{const r=e.currentTarget.getBoundingClientRect();return{
 const TMAX=220,TMIN=40,SPK='<svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',MUT='<svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M17 9l5 6M22 9l-5 6"/></svg>';
 // ширина вкладок одинаковая: до 220px, уменьшается, когда места не хватает
 function tabW(){if(S.mode==='side')return 0;const np=S.tabs.filter(t=>t.pinned).length,n=Math.max(S.tabs.length-np,1),avail=window.innerWidth-8-150-76-np*45-8;return Math.max(TMIN,Math.min(TMAX,Math.floor(avail/n)))}
+let FAVD={};api.onFavData(m=>{Object.assign(FAVD,m);lastKey='';render()});
 function startDrag(e,t,d){
  if(e.button!==0||S.mode!=='top'||e.target.closest('.x')||e.target.closest('.au'))return;
+ const group=selected.has(t.id)&&selected.size>1?[...selected]:null,moving=group||[t.id];
  const sx=e.clientX,sy=e.clientY,strip=$('tabs'),rect=d.getBoundingClientRect(),gx=8+(sx-rect.left),gy=sy;
- let on=false,ind=null,idx=0,detached=false;
- const others=()=>[...strip.querySelectorAll('.tab')].filter(x=>x!==d);
- const calc=x=>{let n=0;for(const o of others()){const r=o.getBoundingClientRect();if(x>r.left+r.width/2)n++}return n};
+ const els=[...strip.querySelectorAll('.tab')],ids=S.tabs.map(x=>x.id);if(els.length!==ids.length)return;
+ const orig=els.map(x=>x.getBoundingClientRect()),gap=els.length>1?Math.max(0,orig[1].left-orig[0].right):0;
+ const di=ids.indexOf(t.id),isMov=i=>moving.includes(ids[i]);
+ const oth=[];els.forEach((el,i)=>{if(!isMov(i))oth.push({el,w:orig[i].width,left:orig[i].left})});
+ const left0=orig[0].left;let pos=left0;for(const o of oth){o.pc=pos;pos+=o.w+gap}      // положения остальных вкладок, когда выбранные убраны
+ const gw=moving.reduce((s,id)=>s+orig[ids.indexOf(id)].width+gap,0);                   // ширина «окна», которое освобождается под выбранные
+ const oi=ids.slice(0,di).filter(x=>!moving.includes(x)).length;
+ let on=false,idx=oi,detached=false;
+ const calc=x=>{let n=0;for(const o of oth)if(x>o.pc+o.w/2)n++;return n};
+ const place=()=>{oth.forEach((o,j)=>{const target=j<idx?o.pc:o.pc+gw;o.el.style.transform='translateX('+(target-o.left)+'px)'})};
+ const reset=(animate)=>{for(const o of oth){if(!animate)o.el.style.transition='none';o.el.style.transform=''}els.forEach((x,i)=>{x.classList.remove('drag','mem');x.style.transform='';x.style.display='';x.removeAttribute('data-n')});strip.classList.remove('dragging');if(!animate){void strip.offsetWidth;for(const o of oth)o.el.style.transition=''}};
  const off=()=>{window.removeEventListener('pointermove',move);window.removeEventListener('pointerup',up);window.removeEventListener('pointercancel',up)};
  function move(ev){
   if(detached){api.dragMove({x:ev.screenX,y:ev.screenY});return}
-  if(!on){if(Math.hypot(ev.clientX-sx,ev.clientY-sy)<7)return;on=true;dragging=true;d.classList.add('drag');ind=el('div',null,'ins');strip.append(ind);try{document.body.setPointerCapture(e.pointerId)}catch{}}
+  if(!on){if(Math.hypot(ev.clientX-sx,ev.clientY-sy)<7)return;on=true;dragging=true;strip.classList.add('dragging');d.classList.add('drag');
+   if(group){d.setAttribute('data-n',String(moving.length));els.forEach((x,i)=>{if(isMov(i)&&x!==d)x.classList.add('mem')})}
+   place();try{document.body.setPointerCapture(e.pointerId)}catch{}}
   // потянули за пределы строки вкладок: окно отделяется сразу и идёт за курсором
   if(ev.clientY>62||ev.clientY<-26||ev.clientX<-10||ev.clientX>window.innerWidth+10){
-   detached=true;d.classList.remove('drag');d.style.transform='';d.style.display='none';if(ind)ind.remove();
-   api.dragStart({id:t.id,x:ev.screenX,y:ev.screenY,gx,gy});return}
+   detached=true;els.forEach((x,i)=>{if(isMov(i))x.style.display='none'});for(const o of oth){o.el.style.transition='none';o.el.style.transform=''}strip.classList.remove('dragging');
+   api.dragStart({id:t.id,ids:group,x:ev.screenX,y:ev.screenY,gx,gy});return}
   d.style.transform='translate('+(ev.clientX-sx)+'px,'+Math.max(-6,Math.min(ev.clientY-sy,70))+'px)';
-  idx=calc(ev.clientX);const L=others(),sr=strip.getBoundingClientRect();
-  const left=idx<L.length?L[idx].getBoundingClientRect().left:(L.length?L[L.length-1].getBoundingClientRect().right:sr.left);
-  ind.style.left=(left-sr.left+strip.scrollLeft-1)+'px'}
+  const n=calc(rect.left+rect.width/2+(ev.clientX-sx));if(n!==idx){idx=n;place()}}
  function up(ev){
-  off();dragging=false;try{document.body.releasePointerCapture(e.pointerId)}catch{}
-  if(detached){api.dragEnd({x:ev.screenX,y:ev.screenY});d.style.display='';suppress=true;setTimeout(()=>{suppress=false},0);return}
-  if(!on)return;d.classList.remove('drag');d.style.transform='';if(ind)ind.remove();
-  const cur=S.tabs.findIndex(x=>x.id===t.id);if(idx!==cur)api.moveTab({id:t.id,to:idx});
-  suppress=true;setTimeout(()=>{suppress=false},0)}
+  off();try{document.body.releasePointerCapture(e.pointerId)}catch{}
+  if(detached){dragging=false;api.dragEnd({x:ev.screenX,y:ev.screenY});suppress=true;setTimeout(()=>{suppress=false},0);return}
+  if(!on){dragging=false;return}
+  suppress=true;setTimeout(()=>{suppress=false},0);
+  // плавно «садим» вкладку на место, затем сообщаем окну
+  const slot=idx<oth.length?oth[idx].pc:(oth.length?oth[oth.length-1].pc+oth[oth.length-1].w+gap:left0);
+  d.style.transition='transform .15s cubic-bezier(.2,.8,.2,1)';d.style.transform='translate('+(slot-orig[di].left)+'px,0)';
+  const changed=group?true:idx!==oi;
+  setTimeout(()=>{dragging=false;if(changed){if(group)api.moveTabs({ids:moving,to:idx});else api.moveTab({id:t.id,to:idx})}reset(false);lastKey='';render()},160)}
  window.addEventListener('pointermove',move);window.addEventListener('pointerup',up);window.addEventListener('pointercancel',up);
 }
 function setDot(d,icon,fb){if(icon&&icon.startsWith('img:')){d.textContent='';d.style.background='transparent';const im=document.createElement('img');im.src=icon.slice(4);d.append(im)}else if(icon&&icon.startsWith('emoji:'))d.textContent=icon.slice(6);else d.textContent=icon||fb}
 function tab(t,w){const cmp=w&&w<110&&!t.pinned;
  const d=el('div',null,'tab'+(t.id===S.active?' act':'')+(cmp?' cmp':'')+(t.pinned?' pin':'')+(selected.has(t.id)?' sel':'')+((t.audible&&!t.muted)?' aud':'')+(seen.has(t.id)?'':' new'));d.style.setProperty('--c',t.color);d.title=t.title;
- let lead=el('span',null,'dot');setDot(lead,t.kindIcon||(S.icons&&S.icons[t.pid]),t.letter);if(t.loading){lead=el('span',null,'spin');lead.style.setProperty('--c',t.color)}d.append(lead,el('span',t.title,'ttl'));
+ let lead=el('span',null,'dot');setDot(lead,t.kindIcon||(S.icons&&S.icons[t.pid]),t.letter);if(t.loading){lead=el('span',null,'spin');lead.style.setProperty('--c',t.color)}d.append(lead);{const fi=t.fav&&FAVD[t.fav];if(fi){const im=document.createElement('img');im.className='fav';im.src=fi;im.alt='';im.draggable=false;d.append(im)}}d.append(el('span',t.title,'ttl'));
  if(t.audible||t.muted){const a=el('button',null,'au');a.innerHTML=t.muted?MUT:SPK;a.title=t.muted?'Включить звук':'Отключить звук';a.onclick=e=>{e.stopPropagation();api.muteTab(t.id)};a.onpointerdown=e=>e.stopPropagation();d.append(a)}
  const x=el('button',null,'x');x.innerHTML=XI;x.title='Закрыть (Ctrl+W)';x.onclick=e=>{e.stopPropagation();api.closeTab(t.id)};d.append(x);
  d.onclick=e=>{if(suppress)return;
@@ -68,7 +82,7 @@ function render(){
     x.onclick=()=>api.scToggle({sid:f.id,pid:S.apid,on:!f.on});B.append(x)}}}
  for(const id of [...selected])if(!S.tabs.some(x=>x.id===id))selected.delete(id);
  const ik=Object.keys(S.icons||{}).map(k=>k+':'+(S.icons[k]||'').length).join();
- const key=JSON.stringify([ik,[...selected],S.mode,S.active,w,S.tabs.map(t=>[t.id,t.title,t.color,t.letter,t.audible,t.muted,t.pinned,t.loading]),side?S.profiles:0]);
+ const key=JSON.stringify([ik,[...selected],S.mode,S.active,w,S.tabs.map(t=>[t.id,t.title,t.color,t.letter,t.audible,t.muted,t.pinned,t.loading,t.fav]),side?S.profiles:0]);
  if(key===lastKey||dragging)return;lastKey=key;
  const T=$('tabs'),G=$('groups');T.replaceChildren();G.replaceChildren();
  if(!side){for(const t of S.tabs)T.append(tab(t,w));const act=T.querySelector('.act');if(act)act.scrollIntoView({block:'nearest',inline:'nearest'})}
