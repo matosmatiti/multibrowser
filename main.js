@@ -9,7 +9,7 @@ const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
 try{let sd='force';try{sd=JSON.parse(fs.readFileSync(SETF(),'utf8')).siteDark||'force'}catch{}if(sd==='force')app.commandLine.appendSwitch('enable-features','WebContentsForceDark')}catch{}   // сайты по умолчанию в тёмной теме
 try{app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion,IntensiveWakeUpThrottling');['disable-renderer-backgrounding','disable-background-timer-throttling','disable-backgrounding-occluded-windows'].forEach(x=>app.commandLine.appendSwitch(x))}catch{}   // страницы не уходят в экономный режим
-const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,uaVersion:'',ver:2};
+const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,uaVersion:'',apiOn:false,apiPort:35777,ver:2};
 const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q='};
 let cfg={...DEF},manual=false;
 const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}
@@ -280,8 +280,8 @@ function closeTab(id){
 const norm=s=>{s=s.trim();if(!s)return homeUrl();if(/^[a-z]+:\/\//i.test(s))return s;return /^[^\s]+\.[^\s]{2,}$/.test(s)||/^localhost(:\d+)?/.test(s)?'https://'+s:searchUrl()+encodeURIComponent(s)};
 
 // ---------- усиленный режим: движок fingerprint-chromium отдельным окном ----------
-async function launch(id){
- const p=prof(id);if(!p||running.has(id))return;
+async function launch(id,opt){
+ opt=opt||{};const p=prof(id);if(!p||running.has(id))return;
  const chrome=findFile(path.join(RES,'engine'),'chrome.exe');if(!chrome)throw new Error('Движок не найден (resources/engine)');
  const job={};let proxy=null;
  if(needsTunnel(p)){const t=await ensureTunnel(p,'e-',o=>makeTunnel(p,'e-',o),()=>{});job.wp=t.wp;job.conf=t.conf;proxy=`socks5://127.0.0.1:${t.port}`}
@@ -290,6 +290,8 @@ async function launch(id){
  const args=[`--user-data-dir=${path.join(DATA(),'profiles',id)}`,`--fingerprint=${p.seed}`,'--no-first-run','--no-default-browser-check','--restore-last-session'];
  if(proxy)args.push(`--proxy-server=${proxy}`,'--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
  if(p.tz)args.push('--timezone='+p.tz);if(p.lang)args.push('--lang='+p.lang,'--accept-lang='+langsOf(p.lang));
+ if(opt.debugPort){args.push('--remote-debugging-port='+opt.debugPort,'--remote-debugging-address=127.0.0.1');job.debugPort=opt.debugPort}
+ if(opt.url&&/^https?:\/\//i.test(opt.url))args.push(opt.url);
  job.chrome=spawn(chrome,args);running.set(id,job);pushMgr();
  job.chrome.on('exit',()=>{cleanup(job);running.delete(id);pushMgr()});
 }
@@ -1136,18 +1138,92 @@ async function restoreBackup(d){
 }
 async function askPw(msg){const r=await appDialog({title:'Резервные копии',message:msg,buttons:['OK','Отмена'],defaultId:0,cancelId:1,input:'password'});return r.response===0?(r.text||''):null}
 
+// ---------- локальный API для Playwright и Selenium (выключен по умолчанию) ----------
+// Только 127.0.0.1, доступ по токену, запросы из браузера и с чужих Host отклоняются.
+const http=require('http');
+let apiSrv=null,apiFails=[];
+const apiTok=()=>{try{return cfg.apiTokenEnc?dec(cfg.apiTokenEnc):null}catch{return null}};
+function apiNewToken(){const t=crypto.randomBytes(24).toString('hex');cfg.apiTokenEnc=enc(t);saveCfg();return t}
+const apiErr=(code,msg)=>Object.assign(new Error(msg),{code});
+function waitCdp(port,ms){const end=Date.now()+ms;return new Promise((res,rej)=>{
+ const retry=()=>{if(Date.now()<end)setTimeout(tick,300);else rej(apiErr(504,'Браузер не открыл отладочный порт вовремя'))};
+ const tick=()=>{const rq=http.get({host:'127.0.0.1',port,path:'/json/version',timeout:1500},r=>{let b='';r.on('data',d=>b+=d);r.on('end',()=>{try{res(JSON.parse(b))}catch{retry()}})});rq.on('error',retry);rq.on('timeout',()=>rq.destroy())};
+ tick()})}
+async function apiStartProfile(id,o){
+ if(!prof(id))throw apiErr(404,'Профиль не найден');
+ let j=running.get(id);
+ if(!j){const port=await freePort();await launch(id,{debugPort:port,url:o&&o.url});j=running.get(id)}
+ if(!j||!j.debugPort)throw apiErr(409,'Профиль уже запущен вручную (без отладочного порта): закрой его и запусти через API');
+ const v=await waitCdp(j.debugPort,30000);
+ return{id,running:true,http:'http://127.0.0.1:'+j.debugPort,ws:v.webSocketDebuggerUrl,browser:v.Browser};
+}
+const apiProf=q=>{const j=running.get(q.id);return{id:q.id,name:q.name,folder:q.folder||'',tags:q.tags||[],connection:connKind(q),running:!!j,http:j&&j.debugPort?'http://127.0.0.1:'+j.debugPort:null}};
+async function apiRoute(req,body){
+ const parts=new URL(req.url,'http://x').pathname.split('/').filter(Boolean),m=req.method;
+ if(parts[0]!=='v1')throw apiErr(404,'Неизвестный путь');
+ if(parts[1]==='status'&&m==='GET')return{app:'MultiBrowser',version:app.getVersion(),running:[...running.keys()]};
+ if(parts[1]==='profiles'){
+  if(parts.length===2){
+   if(m==='GET')return load().map(apiProf);
+   if(m==='POST'){
+    const d={name:String(body.name||'Профиль').slice(0,80),folder:body.folder,mode:'none'};
+    if(body.proxy){const x=body.proxy;if(!['socks5','http'].includes(x.type)||!x.host||!(+x.port>0))throw apiErr(400,'proxy: нужны type (socks5 или http), host и port');
+     Object.assign(d,{mode:'proxy',type:x.type,host:String(x.host),port:String(x.port),user:x.user,pass:x.pass})}
+    else if(body.wireguard){d.mode='vpn';d.confText=String(body.wireguard)}
+    const r=addProfile(d);if(r.error)throw apiErr(400,r.error);
+    if(Array.isArray(body.tags)){const l=load(),q=l.find(x=>x.id===r.id);if(q){q.tags=[...new Set(body.tags.map(x=>String(x).trim().slice(0,30)).filter(Boolean))].slice(0,20);save(l)}}
+    return apiProf(prof(r.id));
+   }
+   throw apiErr(405,'Метод не поддерживается');
+  }
+  const id=parts[2],q=prof(id);if(!q)throw apiErr(404,'Профиль не найден');
+  if(parts.length===3){
+   if(m==='GET')return apiProf(q);
+   if(m==='DELETE'){removeProfile(id);return{id,deleted:true}}
+  }else if(parts[3]==='start'&&m==='POST')return apiStartProfile(id,body);
+  else if(parts[3]==='stop'&&m==='POST'){const j=running.get(id);if(j)kill(j.chrome);return{id,running:false}}
+  throw apiErr(405,'Метод не поддерживается');
+ }
+ throw apiErr(404,'Неизвестный путь');
+}
+function apiStop(){if(apiSrv){try{apiSrv.close()}catch{}apiSrv=null}}
+function apiApply(){
+ apiStop();if(!cfg.apiOn)return;
+ const port=parseInt(cfg.apiPort)||35777,tok=apiTok()||apiNewToken();
+ const srv=http.createServer(async(req,res)=>{
+  const send=(code,obj)=>{res.writeHead(code,{'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store'});res.end(JSON.stringify(obj))};
+  try{
+   if(!/^(127\.0\.0\.1|localhost|\[::1\]):\d+$/.test(String(req.headers.host||'')))return send(403,{error:'Недопустимый Host'});   // защита от DNS rebinding
+   if(req.headers.origin)return send(403,{error:'Запросы со страниц сайтов запрещены'});                                          // защита от CSRF
+   const now=Date.now();apiFails=apiFails.filter(x=>now-x<60000);if(apiFails.length>=20)return send(429,{error:'Слишком много неверных попыток, подожди минуту'});
+   const a=String(req.headers.authorization||''),given=a.startsWith('Bearer ')?a.slice(7):'';
+   const ok=given.length===tok.length&&crypto.timingSafeEqual(Buffer.from(given),Buffer.from(tok));
+   if(!ok){apiFails.push(now);return send(401,{error:'Нужен заголовок Authorization: Bearer <токен>'})}
+   let body={};
+   if(req.method==='POST'||req.method==='PUT'){const ch=[];let n=0;for await(const c of req){n+=c.length;if(n>65536)return send(413,{error:'Слишком большой запрос'});ch.push(c)}
+    const raw=Buffer.concat(ch).toString('utf8');if(raw.trim()){try{body=JSON.parse(raw)}catch{return send(400,{error:'Тело запроса должно быть JSON'})}}}
+   send(200,await apiRoute(req,body));
+  }catch(e){send(typeof e.code==='number'?e.code:500,{error:e.message})}
+ });
+ srv.on('error',e=>{log('api: '+e.message);if(apiSrv===srv)apiSrv=null});
+ srv.listen(port,'127.0.0.1',()=>log('local api: 127.0.0.1:'+port));
+ apiSrv=srv;
+}
+
 // ---------- IPC ----------
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
 H('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
  return r.canceled?null:{name:path.basename(r.filePaths[0]),text:fs.readFileSync(r.filePaths[0],'utf8')}});
-H('add',(e,d)=>{const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};let note='';if(d.folder)p.folder=String(d.folder).trim().slice(0,60);
+function addProfile(d){const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};let note='';if(d.folder)p.folder=String(d.folder).trim().slice(0,60);
  if(d.mode==='vpn'&&d.confText){try{if(parseWg(d.confText).awg){p.vpnNote='awg';note='Обнаружен конфиг AmneziaWG: для него используется отдельное ядро sing-box-lx, параметры маскировки сохраняются.'}}catch(x){return{error:x.message}}p.vpn=enc(d.confText)}
  else if(d.mode==='proxy'&&d.host){p.proxy={type:d.type,host:d.host,port:d.port};if(d.user){p.proxy.user=d.user;p.proxy.pass=enc(d.pass||'')}}
- l.push(p);save(l);pushTabs();pushMgr();return{ok:true,note}});
+ l.push(p);save(l);pushTabs();pushMgr();return{ok:true,note,id:p.id}}
+H('add',(e,d)=>addProfile(d));
 H('launch',async(e,id)=>{try{await launch(id);return null}catch(x){return x.message}});
 H('stop',(e,id)=>{const j=running.get(id);if(j)kill(j.chrome)});
-H('remove',(e,id)=>{const ctx=curW;for(const W of [...windows]){if(W.dead)continue;useW(W);for(const t of tabs.filter(x=>x.pid===id))closeTab(t.id)}if(ctx&&!ctx.dead)useW(ctx);history=history.filter(h=>h.pid!==id);saveHistSoon();
- const j=running.get(id);if(j){kill(j.chrome);cleanup(j);running.delete(id)}save(load().filter(p=>p.id!==id))});
+function removeProfile(id){const ctx=curW;for(const W of [...windows]){if(W.dead)continue;useW(W);for(const t of tabs.filter(x=>x.pid===id))closeTab(t.id)}if(ctx&&!ctx.dead)useW(ctx);history=history.filter(h=>h.pid!==id);saveHistSoon();
+ const j=running.get(id);if(j){kill(j.chrome);cleanup(j);running.delete(id)}save(load().filter(p=>p.id!==id))}
+H('remove',(e,id)=>removeProfile(id));
 H('openInShell',(e,id)=>newTab(id));
 H('newTab',(e,id)=>newTab(id));
 H('newTabMenu',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;profileMenu(a)});
@@ -1169,8 +1245,8 @@ function openPage(kind,bg){   // внутренние страницы («Про
 const openManager=bg=>openPage('manager',bg);
 H('openManager',()=>{openManager()});
 H('openSettings',()=>{openPage('settings')});
-H('getSettings',()=>{const {backupPwEnc,...c}=cfg;return{...c,hasBackupPw:!!backupPwEnc,version:app.getVersion(),dlDefault:app.getPath('downloads')}});
-H('setSettings',(e,p)=>{for(const k of Object.keys(DEF))if(k in p)cfg[k]=p[k];saveCfg();applyTheme();layout();pushBm();return true});
+H('getSettings',()=>{const {backupPwEnc,apiTokenEnc,...c}=cfg;return{...c,hasBackupPw:!!backupPwEnc,version:app.getVersion(),dlDefault:app.getPath('downloads')}});
+H('setSettings',(e,p)=>{for(const k of Object.keys(DEF))if(k in p)cfg[k]=p[k];cfg.apiPort=Math.min(65535,Math.max(1024,parseInt(cfg.apiPort)||35777));saveCfg();applyTheme();layout();pushBm();if('apiOn' in p||'apiPort' in p)apiApply();return true});
 H('checkUpdates',()=>manualCheck());
 H('toggleDownloads',()=>togglePanel());
 H('dlList',()=>dlList());
@@ -1350,6 +1426,9 @@ H('bkRestore',async()=>{
  const c=await appDialog({title:'Восстановление',message:'Восстановить данные из копии?',detail:'Профилей: '+(data.profiles||[]).length+', закладок: '+(data.bookmarks||[]).length+'. Профили с теми же идентификаторами будут заменены, остальное добавится.',buttons:['Восстановить','Отмена'],defaultId:0,cancelId:1,type:'question'});
  if(c.response!==0)return{canceled:true};
  return{ok:true,...(await restoreBackup(data))}});
+H('apiToken',()=>cfg.apiOn?(apiTok()||apiNewToken()):null);
+H('apiNewToken',()=>{const t=apiNewToken();apiApply();return t});
+H('copyText',(e,t)=>{clipboard.writeText(String(t).slice(0,2000));return true});
 H('moveTabs',(e,{ids,to})=>{const set=new Set(ids||[]),moving=tabs.filter(t=>set.has(t.id));if(!moving.length)return;const rest=tabs.filter(t=>!set.has(t.id));rest.splice(Math.max(0,Math.min(to,rest.length)),0,...moving);tabs.splice(0,tabs.length,...rest);pushTabs()});
 H('moveTab',(e,{id,to})=>{const i=tabs.findIndex(x=>x.id===id);if(i<0)return;const [t]=tabs.splice(i,1);tabs.splice(Math.max(0,Math.min(to,tabs.length)),0,t);pushTabs()});
 H('detachTab',(e,{id,x,y})=>detachTab(id,x,y));
@@ -1420,10 +1499,10 @@ app.whenReady().then(()=>{
  log('start v'+app.getVersion());
  try{app.setAppUserModelId('app.multibrowser')}catch{}
  Menu.setApplicationMenu(null);
- createWindow({first:true});ensureFly();
+ createWindow({first:true});ensureFly();apiApply();
  setupUpdater();
  setTimeout(()=>updateAds(false).catch(()=>{}),15000);setInterval(()=>updateAds(false).catch(()=>{}),12*3600*1000);
  nativeTheme.on('updated',()=>{broadcastTheme();for(const W of windows){if(W.dead)continue;try{if(!W.incognito)W.win.setTitleBarOverlay(ovl());W.win.setBackgroundColor(bgColor());for(const t of W.tabs)if(t.kind)t.view.setBackgroundColor(bgColor())}catch{}}
   try{if(panel)panel.setBackgroundColor(bgColor());if(menuV)menuV.setBackgroundColor(bgColor())}catch{}});
 });
-app.on('before-quit',()=>{saveHistNow();for(const j of running.values()){kill(j.chrome);cleanup(j)}for(const t of tunnels.values())cleanup(t)});
+app.on('before-quit',()=>{apiStop();saveHistNow();for(const j of running.values()){kill(j.chrome);cleanup(j)}for(const t of tunnels.values())cleanup(t)});

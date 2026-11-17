@@ -20,5 +20,14 @@ async function init(){const c=await api.getSettings();
  $('bkpw').onclick=async()=>{const r=await api.bkSetPw();if(r.error)await api.alert(r.error);else if(r.ok){await api.alert('Пароль для резервных копий сохранён.');bkShow({hasBackupPw:true})}};
  $('bkc').onclick=async()=>{const r=await api.bkCreate();if(r.error)await api.alert(r.error);else if(r.ok){await api.alert('Копия создана. Профилей: '+r.profiles+', записей входа (куки): '+r.cookies+'.');bkShow({hasBackupPw:true})}};
  $('bkr').onclick=async()=>{const r=await api.bkRestore();if(r.error)await api.alert(r.error);else if(r.ok)await api.alert('Восстановлено. Профилей: '+r.np+', закладок добавлено: '+r.nb+', записей входа: '+r.nc+'.')};
+ const apiUi=async()=>{const on=$('apiOn').checked;$('apir').hidden=!on;$('apiex').hidden=!on;if(!on)return;
+  const tok=await api.apiToken(),port=$('apiPort').value||35777;let shown=false;
+  const ex=(t)=>'Запуск профиля:  POST http://127.0.0.1:'+port+'/v1/profiles/<id>/start\nЗаголовок:  Authorization: Bearer '+t+'\nОтвет содержит ws (адрес CDP): Playwright  chromium.connect_over_cdp(ws)  или  chromium.connectOverCDP(ws).\nСписок профилей:  GET /v1/profiles   Остановка:  POST /v1/profiles/<id>/stop';
+  $('apiex').textContent=ex('••••••••');$('apist').textContent='Токен хранится в зашифрованном виде на этом компьютере';
+  $('apiShow').onclick=()=>{shown=!shown;$('apiex').textContent=ex(shown?tok:'••••••••');$('apiShow').textContent=shown?'Скрыть токен':'Показать токен'};
+  $('apiCopy').onclick=async()=>{await api.copyText(tok);flash()};
+  $('apiNew').onclick=async()=>{if(await api.confirm('Выпустить новый токен? Старый перестанет работать, скрипты нужно будет обновить.')){await api.apiNewToken();apiUi()}}};
+ $('apiOn').checked=!!c.apiOn;$('apiPort').value=c.apiPort||35777;
+ $('apiOn').onchange=async()=>{await save({apiOn:$('apiOn').checked});apiUi()};$('apiPort').onchange=async()=>{await save({apiPort:parseInt($('apiPort').value)||35777});apiUi()};apiUi();
  $('chk').onclick=()=>api.checkUpdates();$('log').onclick=()=>api.showLog()}
 init();

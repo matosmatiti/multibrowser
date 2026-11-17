@@ -99,3 +99,28 @@ Ctrl+клик добавляет вкладку в выбор, Shift+клик в
 Тема самого браузера задаётся в ⚙ Настройки и не зависит от системной. Принудительная тёмная тема применяется только к светлым страницам: если у сайта своя тёмная тема, она остаётся. Для любого сайта это можно переключить в меню ⋮ или правой кнопкой. Уведомления сайта тоже настраиваются в меню ⋮ (разрешить, заблокировать, сбросить).
 ## Скрипты
 «Claude: Продолжить» нажимает только последнюю кнопку и только когда чат прокручен вниз (в своих правилах добавь четвёртое поле «last»). «Отключить автозапуск видео» теперь работает постоянно и на любых сайтах: пауза любого видео и звука, запущенных без твоего клика или клавиши.
+
+## Локальный API (Playwright, Selenium)
+⚙ Настройки → «Локальный API»: включи, скопируй токен. Сервер слушает только 127.0.0.1, требует заголовок `Authorization: Bearer <токен>`, отклоняет запросы со страниц сайтов. Управляет профилями **усиленного режима** (каждый профиль — отдельный браузер со своим отпечатком).
+
+| Запрос | Что делает |
+|---|---|
+| `GET /v1/status` | версия, какие профили запущены |
+| `GET /v1/profiles` | список профилей |
+| `POST /v1/profiles` | создать профиль: `{"name":"A","folder":"Работа","tags":["x"],"proxy":{"type":"socks5","host":"1.2.3.4","port":1080,"user":"u","pass":"p"}}` или `{"wireguard":"<текст .conf>"}` |
+| `POST /v1/profiles/<id>/start` | запустить, тело необязательно: `{"url":"https://..."}`. Ответ: `http` и `ws` адреса CDP |
+| `POST /v1/profiles/<id>/stop` | остановить |
+| `DELETE /v1/profiles/<id>` | удалить |
+
+Пример Playwright (Python):
+```python
+import requests
+from playwright.sync_api import sync_playwright
+H = {"Authorization": "Bearer ТОКЕН"}
+r = requests.post("http://127.0.0.1:35777/v1/profiles/ID/start", headers=H).json()
+with sync_playwright() as p:
+    browser = p.chromium.connect_over_cdp(r["ws"])
+    page = browser.contexts[0].pages[0] if browser.contexts[0].pages else browser.contexts[0].new_page()
+    page.goto("https://example.com")
+```
+Selenium: `options.debugger_address = "127.0.0.1:ПОРТ"` из поля `http` ответа.
