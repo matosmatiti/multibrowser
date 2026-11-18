@@ -17,11 +17,12 @@ button:focus-visible,input:focus-visible{outline:2px solid var(--a);outline-offs
 .nm{font-weight:600}.badge{font-size:11px;border:1px solid var(--b);border-radius:9px;padding:0 8px;color:var(--m);margin-left:8px}
 .pr{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:10px}.pr label{display:flex;gap:7px;align-items:center;cursor:pointer}
 input[type=checkbox]{accent-color:var(--a);width:16px;height:16px}#msg{min-height:18px;margin:6px 0;color:var(--g)}#msg.err{color:var(--r)}
+.cb2{display:flex;gap:7px;align-items:center;margin-top:8px;cursor:pointer}
 .note{border-left:3px solid var(--a);padding:6px 12px;margin:12px 0;background:var(--p);border-radius:0 8px 8px 0}[hidden]{display:none!important}
 </style></head><body><main>
 <h1>Расширения</h1>
 <div class="m">Вставь ссылку на расширение из Chrome Web Store или его идентификатор: программа скачает его и положит в локальную папку, дальше включай по профилям.</div>
-<div class="add"><input id="src" placeholder="https://chromewebstore.google.com/detail/…/идентификатор" aria-label="Ссылка или идентификатор расширения"><button class="p" id="inst">Установить</button></div>
+<div class="add"><input id="src" placeholder="https://chromewebstore.google.com/detail/…/идентификатор" aria-label="Ссылка или идентификатор расширения"><button class="p" id="inst">Установить</button><button id="upd">Проверить обновления</button></div>
 <div id="msg"></div>
 <div class="note">Расширения работают частично: у программы нет кнопок расширений на панели и их всплывающих окон, а часть расширений (особенно Manifest V3) может не запуститься. Лучше всего подходят расширения, которые работают на самих страницах (тёмная тема, переводчики, блокировщики, менеджеры закладок). Расширения применяются во вкладках оболочки, не в усиленном режиме.</div>
 <div id="list"></div><div id="none" class="m" hidden>Расширений пока нет.</div>

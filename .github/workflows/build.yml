@@ -22,9 +22,9 @@ jobs:
         with: {node-version: 20}
       - name: Ядро подключений (sing-box)
         id: vpn
-        env: {SINGBOX_VERSION: 1.13.12}
         run: |
           {
+            SINGBOX_VERSION=$(node -p "require('./versions.json').singbox")
             curl -fsSL -o sb.zip "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VERSION}/sing-box-${SINGBOX_VERSION}-windows-amd64.zip"
             7z x sb.zip -osb -y
             cp sb/sing-box-${SINGBOX_VERSION}-windows-amd64/* resources/
@@ -34,9 +34,9 @@ jobs:
         id: lx
         env:
           GH_TOKEN: ${{ github.token }}
-          LX_TAG: v1.13.13-lx.15
         run: |
           {
+            LX_TAG=$(node -p "require('./versions.json').lx")
             mkdir -p lx
             gh release download "$LX_TAG" -R Leadaxe/sing-box-lx -p '*windows-amd64*.zip' -p 'SHA256SUMS' -D lx
             ls -la lx

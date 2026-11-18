@@ -6,8 +6,7 @@ updates:
       interval: "weekly"
     open-pull-requests-limit: 5
     ignore:
-      - dependency-name: "electron"
-        update-types: ["version-update:semver-major"]
+      - dependency-name: "electron"   # Electron обновляет workflow update-deps
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:

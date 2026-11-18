@@ -1,0 +1,52 @@
+name: update-deps
+# Раз в неделю ищет новые версии Electron, ядер подключений и движка. По умолчанию создаёт запрос на слияние (одна кнопка).
+# Если в настройках репозитория (Settings -> Secrets and variables -> Actions -> Variables) задать AUTO_RELEASE=true,
+# изменения попадут в main сами и сразу запустят сборку и выпуск.
+on:
+  schedule:
+    - cron: '0 5 * * 1'
+  workflow_dispatch:
+permissions:
+  contents: write
+  pull-requests: write
+  actions: write
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20}
+      - name: Поиск обновлений
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/check-updates.mjs --apply
+      - name: Запрос на слияние или прямое обновление
+        if: hashFiles('update-has-changes') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUTO_RELEASE: ${{ vars.AUTO_RELEASE }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f update-has-changes
+          mv update-body.md /tmp/update-body.md
+          if [ "$AUTO_RELEASE" = "true" ]; then
+            git add versions.json package.json
+            git commit -m "Автообновление компонентов"
+            git push origin HEAD:${{ github.event.repository.default_branch }}
+            gh workflow run build.yml
+          else
+            git checkout -b auto/updates
+            git add versions.json package.json
+            git commit -m "Обновление компонентов"
+            git push -f origin auto/updates
+            if [ -n "$(gh pr list --head auto/updates --state open --json number -q '.[0].number')" ]; then
+              gh pr edit auto/updates --body-file /tmp/update-body.md
+            else
+              gh pr create --head auto/updates --base ${{ github.event.repository.default_branch }} --title "Обновление компонентов" --body-file /tmp/update-body.md
+            fi
+          fi
+      - name: Только предупреждение о новой мажорной версии
+        if: hashFiles('update-has-changes') == '' && hashFiles('update-body.md') != ''
+        run: cat update-body.md >> "$GITHUB_STEP_SUMMARY"

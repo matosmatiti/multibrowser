@@ -41,12 +41,11 @@ function draw(){drawSide();const sig=folder+'|'+[...tagSel].join(',')+'|'+$('q')
    const c1=document.createElement('td'),nm=el('div',null,'nm'),tx=el('div');tx.append(el('b',p.name));chips(tx,p);nm.append(icon(p),tx);c1.append(nm);
    const c2=el('td',p.kind,'m'),c3=el('td',on?'● Запущен':'○ Остановлен',on?'on2':'m'),c4=document.createElement('td');c4.append(actions(p,on));tr.append(c0,c1,c2,c3,c4);body.append(tr)}
   tb.append(body);C.append(tb)}
- if(full.length>limit){const more=el('button','Показать ещё ('+(full.length-limit)+')');more.style.margin='12px 16px';more.onclick=()=>{limit+=150;draw()};C.append(more)}
-
  else{const g=el('div',null,'cards');
   for(const p of list){const on=run.includes(p.id),c=el('div',null,'card'),top=el('div',null,'top'),cb=el('input');pick(cb,p);
    const nm=el('div',null,'nm2');nm.append(el('b',p.name),el('div',on?'● Запущен':'○ Остановлен',on?'on2':'m'));top.append(cb,icon(p,true),nm);
-   const ch=el('div');chips(ch,p);c.append(top,ch,el('div',p.kind,'m'),actions(p,on));g.append(c)}C.append(g)}}
+   const ch=el('div');chips(ch,p);c.append(top,ch,el('div',p.kind,'m'),actions(p,on));g.append(c)}C.append(g)}
+ if(full.length>limit){const more=el('button','Показать ещё ('+(full.length-limit)+')');more.style.margin='12px 16px';more.onclick=()=>{limit+=150;draw()};C.append(more)}}
 async function refresh(){const d=await api.list();all=d.profiles;run=d.running;const ids=new Set(all.map(p=>p.id));for(const i of [...sel])if(!ids.has(i))sel.delete(i);if(!all.length)$('form').hidden=false;draw()}
 // ---- поиск, вид, папки
 $('q').oninput=draw;

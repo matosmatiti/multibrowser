@@ -1,6 +1,6 @@
 // Скачивает движок fingerprint-chromium (Windows) в resources/engine. Версия закреплена, чтобы сборка не менялась сама.
 import fs from 'node:fs';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';
-const TAG=process.env.ENGINE_TAG||'148.0.7778.215';
+const TAG=process.env.ENGINE_TAG||JSON.parse(fs.readFileSync('versions.json','utf8')).engine;
 const rel=await (await fetch(`https://api.github.com/repos/adryfish/fingerprint-chromium/releases/tags/${TAG}`,{headers:{'User-Agent':'multibrowser'}})).json();
 const names=(rel.assets||[]).map(a=>a.name);
 const a=(rel.assets||[]).find(x=>/win/i.test(x.name)&&/\.(zip|7z)$/i.test(x.name));

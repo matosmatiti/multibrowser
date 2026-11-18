@@ -135,7 +135,7 @@ function saveVpn(id,o){const l=load(),q=l.find(x=>x.id===id);if(q){Object.assign
 async function ensureTunnel(p,tag,start,progress){
  progress=progress||(()=>{});let t=await start({});
  if(!p.vpn){if(!await t.ready){const e=t.err();cleanup(t);throw new Error('Не удалось подключиться: '+e)}return t}
- const alive=async(tt,ms)=>(await tt.ready)&&((await socksProbe(tt.port,'1.1.1.1',ms))||(await socksProbe(tt.port,'1.0.0.1',2500)));
+ const alive=async(tt,ms)=>(await tt.ready)&&((await socksProbe(tt.port,'1.1.1.1',ms))||(await socksProbe(tt.port,'1.0.0.1',2500))||(await socksProbe(tt.port,'connectivitycheck.gstatic.com',4000)));
  const wg=parseWg(dec(p.vpn));let cur0=p.vpnPort||wg.port;const tried=[cur0];
  let ok=await alive(t,7000);
  for(const port of [wg.port,...PORT_ALT]){
@@ -568,17 +568,40 @@ function hotkey(i,wc){
 
 // ---------- проверка подключения и язык/часовой пояс по IP ----------
 const LANG={US:'en-US',GB:'en-GB',DE:'de-DE',FR:'fr-FR',ES:'es-ES',IT:'it-IT',NL:'nl-NL',PL:'pl-PL',PT:'pt-PT',BR:'pt-BR',RU:'ru-RU',UA:'uk-UA',BY:'ru-BY',KZ:'ru-KZ',TR:'tr-TR',JP:'ja-JP',KR:'ko-KR',CN:'zh-CN',IN:'en-IN',CA:'en-CA',AU:'en-AU',SE:'sv-SE',NO:'nb-NO',FI:'fi-FI',DK:'da-DK',CZ:'cs-CZ',RO:'ro-RO',BG:'bg-BG',GR:'el-GR',HU:'hu-HU',AT:'de-AT',CH:'de-CH',BE:'nl-BE',IE:'en-IE',IL:'he-IL',AE:'ar-AE',SG:'en-SG',HK:'zh-HK',MX:'es-MX',AR:'es-AR',LT:'lt-LT',LV:'lv-LV',EE:'et-EE',MD:'ro-MD',GE:'ka-GE',AM:'hy-AM',AZ:'az-AZ'};
+const GEO_SERVICES=[
+ ['https://ipwho.is/',j=>j.success===false?null:{ip:j.ip,country:j.country_code,city:j.city,org:(j.connection&&(j.connection.isp||j.connection.org))||'',tz:j.timezone&&j.timezone.id}],
+ ['https://api.ip.sb/geoip',j=>({ip:j.ip,country:j.country_code,city:j.city,org:j.organization||j.isp||'',tz:j.timezone})],
+ ['https://ipinfo.io/json',j=>({ip:j.ip,country:j.country,city:j.city,org:j.org,tz:j.timezone})],
+ ['https://ifconfig.co/json',j=>({ip:j.ip,country:j.country_iso,city:j.city,org:j.asn_org,tz:j.time_zone})],
+ ['https://api.country.is/',j=>({ip:j.ip,country:j.country})]];
+const geoCache=new Map();
+async function geoLookup(ses){   // сервисы по очереди: общий адрес VPN часто упирается в лимит запросов у одного из них
+ const statuses=[];let lastErr='',alive=false;
+ for(const [url,map] of GEO_SERVICES){const host=new URL(url).hostname;
+  try{const r=await ses.fetch(url,{signal:AbortSignal.timeout(9000),headers:{Accept:'application/json'}});alive=true;
+   if(!r.ok){statuses.push(host+': '+r.status);continue}
+   const j=await r.json(),info=map(j);if(info&&info.ip)return{info,provider:host,statuses,alive};
+   statuses.push(host+': пустой ответ');
+  }catch(e){lastErr=e.message;statuses.push(host+': '+e.message)}}
+ return{info:null,statuses,lastErr,alive};
+}
 async function checkConn(id){
  const p=prof(id);if(!p)return{error:'Профиль не найден'};
+ const sig=id+'|'+JSON.stringify([p.vpn||null,p.proxy||null,p.vpnPort||null]),hit=geoCache.get(sig);
+ if(hit&&Date.now()-hit.t<3*60000)return hit.res;
  const ses=session.fromPartition('persist:p-'+id);let held=false;
  try{
   if(needsTunnel(p)){const u=await tunnelFor(p);held=true;await ses.setProxy({proxyRules:u})}
   else if(p.proxy)await ses.setProxy({proxyRules:`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`});
   else await ses.setProxy({mode:'direct'});
-  const t0=Date.now(),r=await ses.fetch('https://ipinfo.io/json',{signal:AbortSignal.timeout(12000)});
-  if(!r.ok)throw new Error('сервис проверки ответил '+r.status);
-  const j=await r.json();
-  return{ip:j.ip,country:j.country,city:j.city,org:j.org,tz:j.timezone,lang:LANG[j.country]||'en-US',ms:Date.now()-t0};
+  const t0=Date.now(),g=await geoLookup(ses);
+  if(!g.info){
+   log('check: '+g.statuses.join('; '));
+   if(g.alive)return{error:'Подключение работает, но сервисы определения IP не ответили ('+g.statuses.join('; ')+'). Чаще всего это лимит запросов для общего адреса VPN: попробуй позже.'};
+   const t=tunnels.get(id),extra=t&&t.err?' · ядро: '+t.err():'';return{error:'Нет ответа через подключение ('+(g.lastErr||g.statuses.join('; '))+')'+extra};
+  }
+  const j=g.info,res={ip:j.ip,country:j.country,city:j.city,org:j.org,tz:j.tz,lang:LANG[j.country]||'en-US',ms:Date.now()-t0,provider:g.provider};
+  geoCache.set(sig,{t:Date.now(),res});return res;
  }catch(e){const t=tunnels.get(id),extra=t&&t.err?' · ядро: '+t.err():'';log('check: '+e.message+extra+(t&&t.dump?' | '+t.dump():''));return{error:e.message+extra}}
  finally{if(held)dropTunnel(id)}
 }
@@ -751,7 +774,7 @@ function loadAds(){let txt='';try{txt=fs.readFileSync(ADF(),'utf8');adUpdated=fs
  try{txt+='\n'+fs.readFileSync(path.join(__dirname,'ui','adhosts.txt'),'utf8')}catch{}
  adSet=parseHosts(txt);log('adblock: '+adSet.size+' domains')}
 async function updateAds(force){
- if(!force&&Date.now()-adUpdated<6*864e5)return false;
+ if(!force&&Date.now()-adUpdated<2*864e5)return false;
  await loadEngine(true);
  const urls=['https://raw.githubusercontent.com/StevenBlack/hosts/master/hosts','https://pgl.yoyo.org/adservers/serverlist.php?hostformat=hosts&showintro=0&mimetype=plaintext'];
  let all='';for(const u of urls){try{const r=await fetch(u,{signal:AbortSignal.timeout(30000)});if(r.ok)all+='\n'+await r.text()}catch(e){log('adblock update: '+e.message)}}
@@ -966,7 +989,7 @@ function extName(dir,m){
  return m.name;
 }
 function extList(){
- try{return fs.readdirSync(EXD(),{withFileTypes:true}).filter(d=>d.isDirectory()).map(d=>{const dir=path.join(EXD(),d.name);
+ try{return fs.readdirSync(EXD(),{withFileTypes:true}).filter(d=>d.isDirectory()&&/^[a-p]{32}$/.test(d.name)).map(d=>{const dir=path.join(EXD(),d.name);
   try{const m=JSON.parse(fs.readFileSync(path.join(dir,'manifest.json'),'utf8'));return{id:d.name,name:extName(dir,m)||d.name,version:m.version||'',mv:m.manifest_version||0}}catch{return{id:d.name,name:d.name,version:'',mv:0}}})}
  catch{return[]}
 }
@@ -985,14 +1008,34 @@ function unzipTo(buf,dir){
   fs.mkdirSync(path.dirname(out),{recursive:true});fs.writeFileSync(out,method===0?data:zlib.inflateRawSync(data));
  }
 }
+async function extFetchCrx(id){
+ const url='https://clients2.google.com/service/update2/crx?response=redirect&prodversion='+CHR+'&acceptformat=crx2,crx3&x='+encodeURIComponent('id='+id+'&installsource=ondemand&uc');
+ const r=await fetch(url,{signal:AbortSignal.timeout(60000)});if(!r.ok)throw new Error('Не удалось скачать расширение (код '+r.status+')');
+ const buf=Buffer.from(await r.arrayBuffer());if(buf.length<1000)throw new Error('Магазин не отдал файл расширения');return buf;
+}
 async function extInstall(input){
  const m=String(input||'').match(/[a-p]{32}/);if(!m)throw new Error('Не найден идентификатор расширения (32 буквы). Вставь ссылку из Chrome Web Store или сам идентификатор.');
- const id=m[0],url='https://clients2.google.com/service/update2/crx?response=redirect&prodversion='+CHR+'&acceptformat=crx2,crx3&x='+encodeURIComponent('id='+id+'&installsource=ondemand&uc');
- const r=await fetch(url,{signal:AbortSignal.timeout(60000)});if(!r.ok)throw new Error('Не удалось скачать расширение (код '+r.status+')');
- const buf=Buffer.from(await r.arrayBuffer());if(buf.length<1000)throw new Error('Магазин не отдал файл расширения');
+ const id=m[0],buf=await extFetchCrx(id);
  const dir=path.join(EXD(),id);fs.rmSync(dir,{recursive:true,force:true});fs.mkdirSync(dir,{recursive:true});unzipTo(buf,dir);
  if(!fs.existsSync(path.join(dir,'manifest.json')))throw new Error('В архиве нет manifest.json');
  return id;
+}
+async function extUpdateAll(){   // раз в сутки: скачиваем расширения заново и заменяем, если версия новее
+ const res=[];
+ for(const x of extList()){
+  const tmp=path.join(EXD(),'.tmp-'+x.id);
+  try{const buf=await extFetchCrx(x.id);fs.rmSync(tmp,{recursive:true,force:true});fs.mkdirSync(tmp,{recursive:true});unzipTo(buf,tmp);
+   const mf=JSON.parse(fs.readFileSync(path.join(tmp,'manifest.json'),'utf8'));
+   if(mf.version&&mf.version!==x.version){const dir=path.join(EXD(),x.id);fs.rmSync(dir,{recursive:true,force:true});fs.renameSync(tmp,dir);res.push({id:x.id,name:x.name,from:x.version,to:mf.version})}
+   else fs.rmSync(tmp,{recursive:true,force:true});
+  }catch(e){try{fs.rmSync(tmp,{recursive:true,force:true})}catch{}log('ext update '+x.id+': '+e.message)}
+ }
+ if(res.length){const ids=new Set(res.map(r=>r.id));
+  for(const [part,m] of extLoaded)for(const id of ids){const e0=m.get(id);if(e0){try{const sx=session.fromPartition(part);await (sx.extensions||sx).removeExtension(e0.id)}catch{}m.delete(id)}}
+  for(const q of load()){if(!(q.exts||[]).some(id=>ids.has(id)))continue;const part='persist:p-'+q.id;if(extLoaded.has(part)){await loadExts(session.fromPartition(part),q,part).catch(()=>{});reloadProfileTabs(q.id)}}
+  log('extensions updated: '+res.map(r=>r.name+' '+r.from+'→'+r.to).join(', '));
+ }
+ return res;
 }
 async function loadExts(ses,p,part){
  let m=extLoaded.get(part);if(!m){m=new Map();extLoaded.set(part,m)}
@@ -1232,7 +1275,7 @@ async function autoBackupTick(force){   // автоматическая заши
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
 H('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
  return r.canceled?null:{name:path.basename(r.filePaths[0]),text:fs.readFileSync(r.filePaths[0],'utf8')}});
-function addProfile(d){const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};let note='';if(d.folder)p.folder=String(d.folder).trim().slice(0,60);
+function addProfile(d){const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};if((cfg.extAll||[]).length)p.exts=[...cfg.extAll];let note='';if(d.folder)p.folder=String(d.folder).trim().slice(0,60);
  if(d.mode==='vpn'&&d.confText){try{if(parseWg(d.confText).awg){p.vpnNote='awg';note='Обнаружен конфиг AmneziaWG: для него используется отдельное ядро sing-box-lx, параметры маскировки сохраняются.'}}catch(x){return{error:x.message}}p.vpn=enc(d.confText)}
  else if(d.mode==='proxy'&&d.host){p.proxy={type:d.type,host:d.host,port:d.port};if(d.user){p.proxy.user=d.user;p.proxy.pass=enc(d.pass||'')}}
  l.push(p);save(l);pushTabs();pushMgr();return{ok:true,note,id:p.id}}
@@ -1355,7 +1398,7 @@ H('openScripts',()=>{openPage('scripts')});
 H('importProfiles',(e,text)=>{const l=load(),bad=[];let n=0;
  for(const raw of String(text).split(/\r?\n/)){const line=raw.trim();if(!line||line[0]==='#')continue;
   let nm='',px='';if(line.includes('|')){const i=line.indexOf('|');nm=line.slice(0,i).trim();px=line.slice(i+1).trim()}else if(line.includes(':'))px=line;else nm=line;
-  const p={id:crypto.randomUUID(),name:nm||('Профиль '+(l.length+1)),seed:crypto.randomInt(1,2147483647)};
+  const p={id:crypto.randomUUID(),name:nm||('Профиль '+(l.length+1)),seed:crypto.randomInt(1,2147483647)};if((cfg.extAll||[]).length)p.exts=[...cfg.extAll];
   if(px){try{const u=new URL(px.includes('://')?px:'socks5://'+px),t=u.protocol.replace(':','');
     if(!['http','https','socks5','socks'].includes(t)||!u.hostname)throw new Error('bad');
     p.proxy={type:t.startsWith('http')?'http':'socks5',host:u.hostname,port:u.port||(t.startsWith('http')?'80':'1080')};
@@ -1402,14 +1445,21 @@ H('suggest',(e,{q,anchor})=>{
 H('suggestMove',(e,d)=>{if(!menuOpen||!menuPayload.suggest)return;const n=menuPayload.items.length;if(!n)return;suggestSel=suggestSel<0?(d>0?0:n-1):(suggestSel+d+n)%n;if(menuV&&!menuV.webContents.isDestroyed())menuV.webContents.send('menu-sel',suggestSel)});
 H('suggestPick',()=>{if(!menuOpen||!menuPayload.suggest||suggestSel<0)return false;const it=menuPayload.items[suggestSel],f=it&&it.id&&menuActs.get(it.id);if(f){hideMenu();f();return true}return false});
 H('suggestHide',()=>{if(menuOpen&&menuPayload.suggest)hideMenu()});
-H('extList',()=>({exts:extList(),profiles:load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),enabled:p.exts||[]}))}));
-H('extInstall',async(e,input)=>{try{return{ok:true,id:await extInstall(input)}}catch(x){return{error:x.message}}});
+H('extList',()=>({all:cfg.extAll||[],exts:extList(),profiles:load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),enabled:p.exts||[]}))}));
+H('extInstall',async(e,input)=>{try{const id=await extInstall(input);
+ const set=new Set(cfg.extAll||[]);set.add(id);cfg.extAll=[...set];saveCfg();   // новое расширение по умолчанию включается для всех профилей
+ const l=load();for(const q of l){const s2=new Set(q.exts||[]);s2.add(id);q.exts=[...s2]}save(l);
+ return{ok:true,id}}catch(x){return{error:x.message}}});
+H('extAll',(e,{id,on})=>{const set=new Set(cfg.extAll||[]);if(on)set.add(id);else set.delete(id);cfg.extAll=[...set];saveCfg();
+ if(on){const l=load(),ch=[];for(const q of l){const s2=new Set(q.exts||[]);if(!s2.has(id)){s2.add(id);q.exts=[...s2];ch.push(q.id)}}save(l);for(const pid of ch)reloadProfileTabs(pid)}
+ return true});
+H('extUpdate',async()=>extUpdateAll());
 H('extToggle',async(e,{id,pid,on})=>{const l=load(),p=l.find(x=>x.id===pid);if(!p)return false;const set=new Set(p.exts||[]);if(on)set.add(id);else set.delete(id);p.exts=[...set];save(l);
  if(!on){const part='persist:p-'+pid,m=extLoaded.get(part),ex=m&&m.get(id);if(ex){try{await (()=>{const x=session.fromPartition(part);return (x.extensions||x).removeExtension(ex.id)})()}catch{}m.delete(id)}}
  reloadProfileTabs(pid);return true});
 H('extRemove',async(e,id)=>{
  for(const [part,m] of extLoaded){const ex=m.get(id);if(ex){try{await (()=>{const x=session.fromPartition(part);return (x.extensions||x).removeExtension(ex.id)})()}catch{}m.delete(id)}}
- const l=load();for(const p of l)if(p.exts)p.exts=p.exts.filter(x=>x!==id);save(l);try{fs.rmSync(path.join(EXD(),id),{recursive:true,force:true})}catch{}return true});
+ const l=load();for(const p of l)if(p.exts)p.exts=p.exts.filter(x=>x!==id);save(l);cfg.extAll=(cfg.extAll||[]).filter(x=>x!==id);saveCfg();try{fs.rmSync(path.join(EXD(),id),{recursive:true,force:true})}catch{}return true});
 H('profMeta',(e,{ids,folder,addTags,removeTags,color,icon})=>{
  const set=new Set(ids||[]),l=load();
  for(const q of l){if(!set.has(q.id))continue;
@@ -1519,7 +1569,7 @@ app.whenReady().then(()=>{
  try{app.setAppUserModelId('app.multibrowser')}catch{}
  Menu.setApplicationMenu(null);
  createWindow({first:true});ensureFly();apiApply();
- setupUpdater();setTimeout(()=>autoBackupTick().catch(()=>{}),30000);setInterval(()=>autoBackupTick().catch(()=>{}),6*3600*1000);
+ setupUpdater();setTimeout(()=>extUpdateAll().catch(()=>{}),90000);setInterval(()=>extUpdateAll().catch(()=>{}),24*3600*1000);setTimeout(()=>autoBackupTick().catch(()=>{}),30000);setInterval(()=>autoBackupTick().catch(()=>{}),6*3600*1000);
  setTimeout(()=>updateAds(false).catch(()=>{}),15000);setInterval(()=>updateAds(false).catch(()=>{}),12*3600*1000);
  nativeTheme.on('updated',()=>{broadcastTheme();for(const W of windows){if(W.dead)continue;try{if(!W.incognito)W.win.setTitleBarOverlay(ovl());W.win.setBackgroundColor(bgColor());for(const t of W.tabs)if(t.kind)t.view.setBackgroundColor(bgColor())}catch{}}
   try{if(panel)panel.setBackgroundColor(bgColor());if(menuV)menuV.setBackgroundColor(bgColor())}catch{}});
