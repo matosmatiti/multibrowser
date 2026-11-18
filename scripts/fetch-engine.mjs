@@ -10,3 +10,4 @@ const buf=Buffer.from(await (await fetch(a.browser_download_url)).arrayBuffer())
 console.log('SHA256',createHash('sha256').update(buf).digest('hex'));
 fs.mkdirSync('resources/engine',{recursive:true});fs.writeFileSync('engine-'+a.name,buf);
 execFileSync('7z',['x','engine-'+a.name,'-oresources/engine','-y'],{stdio:'inherit'});
+fs.writeFileSync('resources/engine-version.txt',TAG);
