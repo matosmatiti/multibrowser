@@ -9,7 +9,7 @@ const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
 try{let sd='force';try{sd=JSON.parse(fs.readFileSync(SETF(),'utf8')).siteDark||'force'}catch{}if(sd==='force')app.commandLine.appendSwitch('enable-features','WebContentsForceDark')}catch{}   // сайты по умолчанию в тёмной теме
 try{app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion,IntensiveWakeUpThrottling');['disable-renderer-backgrounding','disable-background-timer-throttling','disable-backgrounding-occluded-windows'].forEach(x=>app.commandLine.appendSwitch(x))}catch{}   // страницы не уходят в экономный режим
-const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,uaVersion:'',apiOn:false,apiPort:35777,autoBackup:false,autoBackupDir:'',autoBackupDays:7,ver:2};
+const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,uaVersion:'',apiOn:false,apiPort:35777,ver:2};
 const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q='};
 let cfg={...DEF},manual=false;
 const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}
@@ -469,18 +469,15 @@ function showMenu(items,anchor,opts={}){
  if(!opts.noFocus)menuV.webContents.focus();if(!menuV.webContents.isLoading())menuV.webContents.send('menu',menuPayload);
 }
 function hideMenu(){dropOverlay(menuV);menuOpen=false}
-function profileMenu(anchor,url,incog,enhanced){
- const l=load().slice().sort((a,b)=>(a.folder?0:1)-(b.folder?0:1)||(a.folder||'').localeCompare(b.folder||'','ru')||a.name.localeCompare(b.name,'ru'));
+function profileMenu(anchor,url,incog){
+ const l=load();
  if(!l.length){showMenu([{label:'Сначала создай профиль',disabled:true},{label:'Открыть «Профили»',fn:()=>openPage('manager')}],anchor);return}
- const c0=cur(),grouped=l.some(p=>p.folder);
- const mk=(p,fn,tag)=>({label:p.name,color:colorOf(p.id),letter:p.name[0].toUpperCase(),icon:p.icon||'',tag:tag||p.folder||'',fn});
- const items=[{type:'header',label:enhanced?'Усиленный режим (отдельное окно)':incog?'Окно инкогнито для профиля':(url?'Открыть в профиле':'Новая вкладка в профиле')}];
- let last=null;
- for(const p of l){
-  if(grouped&&(p.folder||'')!==last){last=p.folder||'';items.push({type:'header',label:last||'Без папки'})}
-  items.push(mk(p,enhanced?()=>launch(p.id).catch(x=>appDialog({title:'MultiBrowser',type:'error',message:x.message})):()=>incog?openIncognito(p.id):newTab(p.id,url,false,c0&&c0.id),enhanced?(p.folder?p.folder+' · усил.':'усил.'):undefined))}
- if(!url&&!incog&&!enhanced)items.push({type:'sep'},{label:'Усиленный режим (отдельное окно)…',fn:()=>profileMenu(anchor,null,false,true)});
- showMenu(items,anchor,{search:l.length>7,placeholder:'Найти профиль (имя, папка)…'});
+ const mk=(p,fn,tag)=>({label:p.name,color:colorOf(p.id),letter:p.name[0].toUpperCase(),icon:p.icon||'',tag,fn}),c0=cur();
+ const items=[{type:'header',label:incog?'Окно инкогнито для профиля':(url?'Открыть в профиле':'Новая вкладка в профиле')}];
+ for(const p of l)items.push(mk(p,()=>incog?openIncognito(p.id):newTab(p.id,url,false,c0&&c0.id)));
+ if(!url&&!incog){items.push({type:'sep'},{type:'header',label:'Усиленный режим (отдельное окно)'});
+  for(const p of l)items.push(mk(p,()=>launch(p.id).catch(x=>appDialog({title:'MultiBrowser',type:'error',message:x.message})),'усил.'))}
+ showMenu(items,anchor,{search:l.length>7});
 }
 function mainMenu(anchor){
  const t=cur();
@@ -490,7 +487,6 @@ function mainMenu(anchor){
   {label:'Новое окно',hint:'Ctrl+N',fn:()=>newWindowFlow()},
   {label:'Новое окно инкогнито',hint:'Ctrl+Shift+N',fn:()=>incognitoFlow()},
   {label:'Поиск по вкладкам',hint:'Ctrl+Shift+A',fn:()=>tabSearch()},
-  {label:'Открыть профиль…',hint:'Ctrl+Shift+P',fn:()=>profileMenu()},
   {type:'sep'},
   {label:'Закладки',hint:'Ctrl+Shift+O',fn:()=>openPage('bookmarks')},
   {label:'История',hint:'Ctrl+H',fn:()=>openPage('history')},
@@ -556,7 +552,6 @@ function hotkey(i,wc){
  if(c&&sh&&L==='n'){incognitoFlow();return true}
  if(c&&!sh&&L==='n'){newWindowFlow();return true}
  if(c&&sh&&L==='a'){tabSearch();return true}
-  if(c&&sh&&L==='p'){profileMenu();return true}
  if(c&&sh&&L==='w'){win.close();return true}
  if(c&&sh&&L==='m'&&w&&t){w.setAudioMuted(!w.isAudioMuted());t.muted=w.isAudioMuted();pushTabs();return true}
  if(c&&!sh&&L==='s'&&w){savePage(w);return true}
@@ -1215,19 +1210,6 @@ function apiApply(){
  apiSrv=srv;
 }
 
-const engineVer=()=>{try{return fs.readFileSync(path.join(RES,'engine-version.txt'),'utf8').trim()}catch{return ''}};
-async function autoBackupTick(force){   // автоматическая зашифрованная копия в выбранную папку, хранятся 5 последних
- if(!cfg.autoBackup&&!force)return{skipped:'off'};
- const dir=cfg.autoBackupDir;if(!dir||!fs.existsSync(dir))return{error:'Папка для копий не найдена: выбери её заново'};
- let pw=null;try{pw=cfg.backupPwEnc?dec(cfg.backupPwEnc):null}catch{}if(!pw)return{error:'Сначала задай пароль резервных копий'};
- const days=Math.max(1,parseInt(cfg.autoBackupDays)||7);if(!force&&Date.now()-(cfg.lastAutoBackup||0)<days*864e5)return{skipped:'recent'};
- try{const data=await backupData(),name='MultiBrowser-auto-'+new Date().toISOString().slice(0,10)+'.mbbak';
-  fs.writeFileSync(path.join(dir,name),bkEncrypt(data,pw));cfg.lastAutoBackup=Date.now();saveCfg();
-  const olds=fs.readdirSync(dir).filter(f=>/^MultiBrowser-auto-.*\.mbbak$/.test(f)).sort();while(olds.length>5){try{fs.rmSync(path.join(dir,olds.shift()))}catch{}}
-  log('auto backup: '+name);return{ok:true,file:name};
- }catch(e){log('auto backup: '+e.message);return{error:e.message}}
-}
-
 // ---------- IPC ----------
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
 H('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
@@ -1263,7 +1245,7 @@ function openPage(kind,bg){   // внутренние страницы («Про
 const openManager=bg=>openPage('manager',bg);
 H('openManager',()=>{openManager()});
 H('openSettings',()=>{openPage('settings')});
-H('getSettings',()=>{const {backupPwEnc,apiTokenEnc,...c}=cfg;return{...c,hasBackupPw:!!backupPwEnc,engineVer:engineVer(),chromium:process.versions.chrome,electron:process.versions.electron,version:app.getVersion(),dlDefault:app.getPath('downloads')}});
+H('getSettings',()=>{const {backupPwEnc,apiTokenEnc,...c}=cfg;return{...c,hasBackupPw:!!backupPwEnc,version:app.getVersion(),dlDefault:app.getPath('downloads')}});
 H('setSettings',(e,p)=>{for(const k of Object.keys(DEF))if(k in p)cfg[k]=p[k];cfg.apiPort=Math.min(65535,Math.max(1024,parseInt(cfg.apiPort)||35777));saveCfg();applyTheme();layout();pushBm();if('apiOn' in p||'apiPort' in p)apiApply();return true});
 H('checkUpdates',()=>manualCheck());
 H('toggleDownloads',()=>togglePanel());
@@ -1425,7 +1407,6 @@ H('openProfiles',async(e,{ids,newWindow})=>{
  const base=cur();let first=true;
  for(const id of list){await newTab(id,undefined,!first&&true,first&&base&&!newWindow?base.id:undefined);first=false}
  return true});
-H('bkAutoNow',()=>autoBackupTick(true));
 H('bkInfo',()=>({hasPw:!!cfg.backupPwEnc}));
 H('bkSetPw',async()=>{const a=await askPw('Придумай пароль для резервных копий');if(!a)return{canceled:true};if(a.length<6)return{error:'Пароль слишком короткий (минимум 6 символов)'};
  const b=await askPw('Повтори пароль');if(b!==a)return{error:'Пароли не совпали'};cfg.backupPwEnc=enc(a);saveCfg();return{ok:true}});
@@ -1519,7 +1500,7 @@ app.whenReady().then(()=>{
  try{app.setAppUserModelId('app.multibrowser')}catch{}
  Menu.setApplicationMenu(null);
  createWindow({first:true});ensureFly();apiApply();
- setupUpdater();setTimeout(()=>autoBackupTick().catch(()=>{}),30000);setInterval(()=>autoBackupTick().catch(()=>{}),6*3600*1000);
+ setupUpdater();
  setTimeout(()=>updateAds(false).catch(()=>{}),15000);setInterval(()=>updateAds(false).catch(()=>{}),12*3600*1000);
  nativeTheme.on('updated',()=>{broadcastTheme();for(const W of windows){if(W.dead)continue;try{if(!W.incognito)W.win.setTitleBarOverlay(ovl());W.win.setBackgroundColor(bgColor());for(const t of W.tabs)if(t.kind)t.view.setBackgroundColor(bgColor())}catch{}}
   try{if(panel)panel.setBackgroundColor(bgColor());if(menuV)menuV.setBackgroundColor(bgColor())}catch{}});

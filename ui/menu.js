@@ -4,8 +4,8 @@ function render(d,keep){
  if(!keep)$('s').value='';data=d;const L=$('in');L.replaceChildren();$('s').hidden=!d.search;$('s').placeholder=d.placeholder||'Найти профиль…';
  const q=$('s').value.trim().toLowerCase();
  for(const it of d.items){
-  if(it.type==='sep'){if(!q)L.append(el('div',null,'sp'));continue}
-  if(it.type==='header'){if(!q)L.append(el('div',it.label,'hd'));continue}
+  if(it.type==='sep'){L.append(el('div',null,'sp'));continue}
+  if(it.type==='header'){L.append(el('div',it.label,'hd'));continue}
   if(q&&!((it.label||'')+' '+(it.tag||'')).toLowerCase().includes(q))continue;
   const r=el('button',null,'it');r.disabled=!!it.disabled;
   if(it.color){const c=el('span',it.letter||'','dot');c.style.background=it.color;

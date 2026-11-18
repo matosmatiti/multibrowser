@@ -1,6 +1,6 @@
 const $=i=>document.getElementById(i);
 const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
-let limit=150,lastSig='',all=[],run=[],folder='*',tagSel=new Set(),sel=new Set(),view=localStorage.getItem('mbView')||'table',conf=null;
+let all=[],run=[],folder='*',tagSel=new Set(),sel=new Set(),view=localStorage.getItem('mbView')||'table',conf=null;
 const PAL=['#ff7a59','#e5484d','#ff6b9a','#b58cff','#6a4c93','#4c8dff','#2ec4c4','#3ecf8e','#8ac926','#ffc247','#9aa5b8','#5b6478'];
 const EMO=['💼','🛒','📣','🎮','🎬','📷','🧪','🔒','🏠','💬','📧','📱','💡','🚀','🌍','⭐','🔥','🎯','💰','🛠️','🎵','📚','🤖','🧿'];
 function icon(p,big){const s=el('span',null,'ic'+(big?' big':'')),im=p.icon&&p.icon.startsWith('img:');
@@ -32,17 +32,15 @@ function actions(p,on){const w=el('div',null,'acts'),sh=el('button','Откры�
  rm.onclick=async()=>{if(await api.confirm('Удалить профиль «'+p.name+'»?')){sel.delete(p.id);await api.remove(p.id);refresh()}};
  sd.onclick=e=>{e.stopPropagation();scriptMenu(p,sd)};w.append(sh,go,ck,st,rm,sd);return w}
 function pick(cb,p){cb.type='checkbox';cb.checked=sel.has(p.id);cb.onchange=()=>{cb.checked?sel.add(p.id):sel.delete(p.id);draw()}}
-function draw(){drawSide();const sig=folder+'|'+[...tagSel].join(',')+'|'+$('q').value;if(sig!==lastSig){lastSig=sig;limit=150}const full=visible(),list=full.slice(0,limit),C=$('content');C.replaceChildren();
+function draw(){drawSide();const list=visible(),C=$('content');C.replaceChildren();
  $('vt').classList.toggle('on',view==='table');$('vc').classList.toggle('on',view==='cards');
- $('none').hidden=full.length>0;$('none').textContent=all.length?'Ничего не найдено.':'Профилей пока нет. Нажми «+ Новый профиль» и создай первый.';
+ $('none').hidden=list.length>0;$('none').textContent=all.length?'Ничего не найдено.':'Профилей пока нет. Нажми «+ Новый профиль» и создай первый.';
  $('sel').hidden=!sel.size;$('scnt').textContent=sel.size;
  if(view==='table'){const tb=document.createElement('table');tb.innerHTML='<thead><tr><th></th><th>ПРОФИЛЬ</th><th>ПОДКЛЮЧЕНИЕ</th><th>СТАТУС</th><th></th></tr></thead>';const body=document.createElement('tbody');
   for(const p of list){const on=run.includes(p.id),tr=document.createElement('tr'),c0=document.createElement('td'),cb=el('input');pick(cb,p);c0.append(cb);
    const c1=document.createElement('td'),nm=el('div',null,'nm'),tx=el('div');tx.append(el('b',p.name));chips(tx,p);nm.append(icon(p),tx);c1.append(nm);
    const c2=el('td',p.kind,'m'),c3=el('td',on?'● Запущен':'○ Остановлен',on?'on2':'m'),c4=document.createElement('td');c4.append(actions(p,on));tr.append(c0,c1,c2,c3,c4);body.append(tr)}
   tb.append(body);C.append(tb)}
- if(full.length>limit){const more=el('button','Показать ещё ('+(full.length-limit)+')');more.style.margin='12px 16px';more.onclick=()=>{limit+=150;draw()};C.append(more)}
-
  else{const g=el('div',null,'cards');
   for(const p of list){const on=run.includes(p.id),c=el('div',null,'card'),top=el('div',null,'top'),cb=el('input');pick(cb,p);
    const nm=el('div',null,'nm2');nm.append(el('b',p.name),el('div',on?'● Запущен':'○ Остановлен',on?'on2':'m'));top.append(cb,icon(p,true),nm);
