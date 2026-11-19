@@ -116,7 +116,7 @@ async function makeTunnel(p,tag,opt){
  const wp=spawn(exe,['run','-c',conf],{windowsHide:true});let out='';
  const add=d=>{out=(out+d).slice(-1500)};wp.stdout.on('data',add);wp.stderr.on('data',add);
  const clean=()=>out.replace(ANSI,'').trim();
- return {wp,conf,port,n:1,core:lx?'lx':'official',peerPort:wg?wg.port:null,err:()=>clean().split('\n').pop()||'туннель не отвечает',dump:()=>clean(),ready:waitPort(port)};
+ return {wp,conf,port,n:1,core:lx?'lx':'official',peerPort:wg?wg.port:null,err:()=>clean().split('\n').pop()||'ядро ошибок не вывело',dump:()=>clean(),ready:waitPort(port)};
 }
 // проверка, что трафик реально идёт через туннель: запрос по IP (без DNS) и по имени (через DNS туннеля)
 function socksProbe(port,host,ms){return new Promise(res=>{
@@ -250,7 +250,7 @@ async function newTab(pid,url,bg,afterId){
  on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;userDocStart(t,u);adCosmetics(t,u);applyDark(t,u);try{const o=new URL(u).origin;if(o!==t.__org){t.__org=o;t.favId='';t.favData=''}}catch{}}});
  on('context-menu',(e,pr)=>ctxMenu(t,pr));
  on('console-message',(...a)=>{const ev=a[0]||{},msg=typeof a[2]==='string'?a[2]:ev.message;if(typeof msg!=='string'||msg.charCodeAt(0)!==1)return;const kind=msg.slice(1,4),data=msg.slice(4);
-  if(kind==='MBN')notifyMsg(wc,data,ev.frame);else if(kind==='MBL'){try{const o=JSON.parse(data);if(/^https?:/i.test(o.u))newTab(t.pid,o.u,!!o.bg,t.id)}catch{}}});
+  if(kind==='MBN')notifyMsg(wc,data,ev.frame);else if(kind==='MBP')pasteImage(wc,ev.frame);else if(kind==='MBL'){try{const o=JSON.parse(data);if(/^https?:/i.test(o.u))newTab(t.pid,o.u,!!o.bg,t.id)}catch{}}});
  on('page-favicon-updated',(e,icons)=>favFetch(t,icons));
  const au=()=>{const a=wc.isCurrentlyAudible(),m=wc.isAudioMuted();if(t.audible!==a||t.muted!==m){t.audible=a;t.muted=m;if(useW(t.W))pushTabs()}};
  on('audio-state-changed',au);on('media-started-playing',au);on('media-paused',au);
@@ -805,11 +805,13 @@ async function adCosmetics(t,url){
   await setDocScript(t,'ad',parts.length?parts.join('\n;'):null);
  }catch(e){log('cosmetics: '+e.message)}
 }
+const NO_BLOCK=new Set(['ipwho.is','api.ip.sb','ipinfo.io','ifconfig.co','api.country.is']);   // сервисы проверки IP: их использует сама программа
 function adblockSession(ses,pid,key){
  key=key||pid;if(adHooked.has(key))return;adHooked.add(key);
  ses.webRequest.onBeforeRequest({urls:['http://*/*','https://*/*','ws://*/*','wss://*/*']},(d,cb)=>{
-  if(!cfg.adblock||d.resourceType==='mainFrame'){cb({});return}
+  if(!cfg.adblock||d.resourceType==='mainFrame'||!d.webContentsId){cb({});return}   // запросы без страницы (проверка IP, расширения) не блокируем
   let h='';try{h=new URL(d.url).hostname.toLowerCase()}catch{cb({});return}
+  if(NO_BLOCK.has(h)){cb({});return}
   let hit=false,redir=null;
   if(adEngine){try{
    const wc0=d.webContentsId?webContents.fromId(d.webContentsId):null,src=(wc0&&!wc0.isDestroyed()&&wc0.getURL())||d.referrer||'';
@@ -849,8 +851,8 @@ function permSession(ses,pid,key){
   let origin='';try{origin=new URL((details&&details.requestingUrl)||wc.getURL()).origin}catch{}
   const key=origin+'|'+perm,saved=(p.perms||{})[key];
   if(saved!==undefined){cb(saved);return}
-  appDialog({title:'Разрешение сайта',message:origin.replace(/^https?:\/\//,'')+' запрашивает доступ '+ask,detail:'Профиль: '+p.name+'. Решение запомнится для этого сайта.',buttons:['Разрешить','Блокировать'],defaultId:1,cancelId:1,type:'question'})
-   .then(r=>{const ok=r.response===0,l=load(),q=l.find(x=>x.id===pid);if(q){q.perms=q.perms||{};q.perms[key]=ok;save(l)}cb(ok)});
+  appDialog({title:'Разрешение сайта',message:origin.replace(/^https?:\/\//,'')+' запрашивает доступ '+ask,detail:'Профиль: '+p.name+'. Решение запомнится для этого сайта.',buttons:['Разрешить','Блокировать','Не сейчас'],defaultId:perm==='clipboard-read'?0:1,cancelId:2,type:'question'})
+   .then(r=>{if(r.response===2){cb(false);return}const ok=r.response===0,l=load(),q=l.find(x=>x.id===pid);if(q){q.perms=q.perms||{};q.perms[key]=ok;save(l)}cb(ok)});
  });
  ses.setPermissionCheckHandler((wc,perm)=>{if(perm==='notifications'){const p=prof(pid);return !p||p.notify!==false}return true});
 }
@@ -1065,9 +1067,19 @@ function notifyShim(C){return `(()=>{try{
  try{Object.defineProperty(window,'Notification',{value:N,configurable:true,writable:true})}catch(e){}
  try{const q=navigator.permissions&&navigator.permissions.query.bind(navigator.permissions);if(q)navigator.permissions.query=d=>(d&&d.name==='notifications')?Promise.resolve({state:perm==='default'?'prompt':perm,onchange:null,addEventListener(){},removeEventListener(){}}):q(d)}catch(e){}
  try{if(window.ServiceWorkerRegistration)ServiceWorkerRegistration.prototype.showNotification=function(t,o){o=o||{};if(perm==='granted')send({t:'show',id:0,title:String(t),body:o.body||''});return Promise.resolve()}}catch(e){}
+ // запасной путь вставки картинки (скриншот в буфере): если страница не получила её штатно, программа сама отдаёт её странице
+ let lastPaste=0,sentP=0;const askP=()=>{if(Date.now()-sentP>400){sentP=Date.now();LOG('\\u0001MBP')}};
+ document.addEventListener('paste',e=>{if(!e.isTrusted)return;lastPaste=Date.now();const d=e.clipboardData;if(!d)return;if(d.files&&d.files.length)return;const ty=[...(d.types||[])];if(ty.some(t=>t==='text/plain'||t==='text/html'||t==='Files'))return;askP()},true);
+ document.addEventListener('keydown',e=>{if(!e.isTrusted)return;if(((e.ctrlKey||e.metaKey)&&e.code==='KeyV')||(e.shiftKey&&e.code==='Insert')){const t0=Date.now();setTimeout(()=>{if(lastPaste<t0)askP()},250)}},true);
  document.addEventListener('click',e=>{if(e.button!==0||!(e.ctrlKey||e.metaKey))return;let a=e.target;while(a&&a.nodeType===1&&a.tagName!=='A')a=a.parentElement;
   if(!a||!a.href||!/^https?:/i.test(a.href))return;e.preventDefault();e.stopImmediatePropagation();LOG('\\u0001MBL'+JSON.stringify({u:a.href,bg:!e.shiftKey}))},true);
 }catch(e){}})();`}
+function pasteImage(wc,frame){
+ try{const img=clipboard.readImage();if(!img||img.isEmpty())return;const png=img.toPNG();if(!png.length||png.length>25e6)return;
+  const js='(()=>{const b=atob('+JSON.stringify(png.toString('base64'))+'),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);const f=new File([u],"image.png",{type:"image/png"}),dt=new DataTransfer();dt.items.add(f);(document.activeElement||document.body).dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true,composed:true}))})()';
+  (frame&&frame.executeJavaScript?frame:wc).executeJavaScript(js).catch(()=>{});
+ }catch(e){log('paste image: '+e.message)}
+}
 function tabByWc(wc){for(const W of windows)for(const t of W.tabs)if(!t.kind&&t.view.webContents===wc)return t;return null}
 function notifyDoc(t){const p=prof(t.pid);if(!p)return;return setDocScript(t,'notify',notifyShim({on:p.notify!==false,m:p.notifyPerms||{}}))}
 function notifyDocAll(pid){for(const W of windows){if(W.dead)continue;for(const t of W.tabs)if(!t.kind&&t.pid===pid&&!t.view.webContents.isDestroyed())notifyDoc(t)}}
