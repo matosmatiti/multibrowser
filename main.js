@@ -250,7 +250,7 @@ async function newTab(pid,url,bg,afterId){
  on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;userDocStart(t,u);adCosmetics(t,u);applyDark(t,u);try{const o=new URL(u).origin;if(o!==t.__org){t.__org=o;t.favId='';t.favData=''}}catch{}}});
  on('context-menu',(e,pr)=>ctxMenu(t,pr));
  on('console-message',(...a)=>{const ev=a[0]||{},msg=typeof a[2]==='string'?a[2]:ev.message;if(typeof msg!=='string'||msg.charCodeAt(0)!==1)return;const kind=msg.slice(1,4),data=msg.slice(4);
-  if(kind==='MBN')notifyMsg(wc,data,ev.frame);else if(kind==='MBP')pasteImage(wc,ev.frame);else if(kind==='MBL'){try{const o=JSON.parse(data);if(/^https?:/i.test(o.u))newTab(t.pid,o.u,!!o.bg,t.id)}catch{}}});
+  if(kind==='MBN')notifyMsg(wc,data,ev.frame);else if(kind==='MBP')pasteImage(wc,ev.frame);else if(kind==='MBF'){try{fileChooser(t,wc,JSON.parse(data))}catch{}}else if(kind==='MBL'){try{const o=JSON.parse(data);if(/^https?:/i.test(o.u))newTab(t.pid,o.u,!!o.bg,t.id)}catch{}}});
  on('page-favicon-updated',(e,icons)=>favFetch(t,icons));
  const au=()=>{const a=wc.isCurrentlyAudible(),m=wc.isAudioMuted();if(t.audible!==a||t.muted!==m){t.audible=a;t.muted=m;if(useW(t.W))pushTabs()}};
  on('audio-state-changed',au);on('media-started-playing',au);on('media-paused',au);
@@ -667,8 +667,8 @@ const BUILTIN=[
   code:"(()=>{if(window.__mbNoAuto)return;window.__mbNoAuto=1;let last=0;const mark=()=>{last=Date.now()};for(const ev of ['pointerdown','mousedown','keydown','touchstart'])addEventListener(ev,mark,true);const allowed=()=>Date.now()-last<3000||(navigator.userActivation&&navigator.userActivation.isActive);const stop=v=>{try{if(!allowed()){v.autoplay=false;if(v.removeAttribute)v.removeAttribute('autoplay');v.pause()}}catch(e){}};for(const ev of ['play','playing','loadeddata','canplay'])document.addEventListener(ev,e=>{const v=e.target;if(v&&v.tagName&&/^(VIDEO|AUDIO)$/.test(v.tagName))stop(v)},true);const scan=()=>document.querySelectorAll('video,audio').forEach(v=>{if(!v.__mbS){v.__mbS=1;try{v.autoplay=false}catch(e){}}if(!v.paused)stop(v)});const start=()=>{scan();new MutationObserver(scan).observe(document,{childList:true,subtree:true});setInterval(scan,1200)};if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start);else start()})();"},
  {id:'b-yt-speed',name:'YouTube: скорость воспроизведения',desc:'Задаёт скорость видео на YouTube (кроме рекламы).',type:'js',builtin:true,match:['youtube.com'],runAt:'dom-ready',params:[{key:'speed',label:'Скорость (1 = обычная)',type:'number',def:1.5}],
   code:"const sp=Number(MB.params.speed)||1;setInterval(()=>{const v=document.querySelector('video');if(v&&v.playbackRate!==sp&&!document.querySelector('.ad-showing'))v.playbackRate=sp},700);"},
- {id:'b-unlock-copy',name:'Разрешить копирование текста',desc:'Снимает запрет выделения и копирования на сайтах, где он включён.',type:'js',builtin:true,match:['*'],runAt:'dom-ready',params:[],
-  code:"const st=document.createElement('style');st.textContent='*{user-select:text!important;-webkit-user-select:text!important}';(document.head||document.documentElement).append(st);for(const ev of ['copy','cut','paste','contextmenu','selectstart','dragstart'])document.addEventListener(ev,e=>e.stopImmediatePropagation(),true);"},
+ {id:'b-unlock-copy',name:'Разрешить копирование текста',desc:'Снимает запрет выделения и копирования на сайтах, где он включён. Вставку и перетаскивание не трогает.',type:'js',builtin:true,match:['*'],runAt:'dom-ready',params:[],
+  code:"const st=document.createElement('style');st.textContent='*{user-select:text!important;-webkit-user-select:text!important}';(document.head||document.documentElement).append(st);for(const ev of ['copy','cut','contextmenu','selectstart'])document.addEventListener(ev,e=>e.stopImmediatePropagation(),true);"},
  {id:'b-autoscroll',name:'Автопрокрутка страницы',desc:'Плавно прокручивает страницу вниз с заданной скоростью.',type:'js',builtin:true,match:['*'],runAt:'dom-ready',params:[{key:'speed',label:'Скорость, пикселей в секунду',type:'number',def:40}],
   code:"let last=performance.now();const sp=Number(MB.params.speed)||40;const f=t=>{window.scrollBy(0,sp*(t-last)/1000);last=t;requestAnimationFrame(f)};requestAnimationFrame(f);"}
 ];
@@ -1071,14 +1071,41 @@ function notifyShim(C){return `(()=>{try{
  let lastPaste=0,sentP=0;const askP=()=>{if(Date.now()-sentP>400){sentP=Date.now();LOG('\\u0001MBP')}};
  document.addEventListener('paste',e=>{if(!e.isTrusted)return;lastPaste=Date.now();const d=e.clipboardData;if(!d)return;if(d.files&&d.files.length)return;const ty=[...(d.types||[])];if(ty.some(t=>t==='text/plain'||t==='text/html'||t==='Files'))return;askP()},true);
  document.addEventListener('keydown',e=>{if(!e.isTrusted)return;if(((e.ctrlKey||e.metaKey)&&e.code==='KeyV')||(e.shiftKey&&e.code==='Insert')){const t0=Date.now();setTimeout(()=>{if(lastPaste<t0)askP()},250)}},true);
+ if(window===window.top){
+  document.addEventListener('click',e=>{const t=e.target;if(!t||t.tagName!=='INPUT'||t.type!=='file'||t.disabled||t.webkitdirectory||window.__mbSkip||e.defaultPrevented)return;
+   e.preventDefault();const L=window.__mbFI=window.__mbFI||[];const id=L.push(t)-1;LOG('\\u0001MBF'+JSON.stringify({id,multiple:!!t.multiple,accept:t.accept||''}))},true);
+  window.__mbFileNative=id=>{const t=(window.__mbFI||[])[id];if(t){window.__mbSkip=1;try{t.click()}finally{window.__mbSkip=0}}};
+ }
  document.addEventListener('click',e=>{if(e.button!==0||!(e.ctrlKey||e.metaKey))return;let a=e.target;while(a&&a.nodeType===1&&a.tagName!=='A')a=a.parentElement;
   if(!a||!a.href||!/^https?:/i.test(a.href))return;e.preventDefault();e.stopImmediatePropagation();LOG('\\u0001MBL'+JSON.stringify({u:a.href,bg:!e.shiftKey}))},true);
 }catch(e){}})();`}
 function pasteImage(wc,frame){
  try{const img=clipboard.readImage();if(!img||img.isEmpty())return;const png=img.toPNG();if(!png.length||png.length>25e6)return;
   const js='(()=>{const b=atob('+JSON.stringify(png.toString('base64'))+'),u=new Uint8Array(b.length);for(let i=0;i<b.length;i++)u[i]=b.charCodeAt(i);const f=new File([u],"image.png",{type:"image/png"}),dt=new DataTransfer();dt.items.add(f);(document.activeElement||document.body).dispatchEvent(new ClipboardEvent("paste",{clipboardData:dt,bubbles:true,cancelable:true,composed:true}))})()';
-  (frame&&frame.executeJavaScript?frame:wc).executeJavaScript(js).catch(()=>{});
+  (frame&&frame.executeJavaScript?frame:wc).executeJavaScript(js).then(()=>log('paste image: sent '+png.length+' bytes')).catch(e=>log('paste image failed: '+e.message));
  }catch(e){log('paste image: '+e.message)}
+}
+async function openDlg(w,o){   // диалог выбора файла: открывается в папке, откуда файл брали в прошлый раз
+ o={...(o||{})};if(!o.defaultPath){const d=cfg.lastFileDir;if(d&&fs.existsSync(d))o.defaultPath=d}
+ const r=await (w?dialog.showOpenDialog(w,o):dialog.showOpenDialog(o));
+ if(!r.canceled&&r.filePaths&&r.filePaths[0]&&!(o.properties||[]).includes('openDirectory')){cfg.lastFileDir=path.dirname(r.filePaths[0]);saveCfg()}
+ return r;
+}
+function acceptFilters(acc){
+ const ext=new Set(),M={'image/*':['png','jpg','jpeg','gif','webp','bmp','svg','avif','heic'],'video/*':['mp4','webm','mov','mkv','avi','m4v'],'audio/*':['mp3','wav','ogg','m4a','flac','aac'],'application/pdf':['pdf'],'text/plain':['txt'],'text/csv':['csv'],'application/json':['json'],'application/zip':['zip']};
+ for(let tok of String(acc||'').split(',')){tok=tok.trim().toLowerCase();if(!tok)continue;if(tok.startsWith('.'))ext.add(tok.slice(1).replace(/[^a-z0-9]/g,''));else if(M[tok])M[tok].forEach(x=>ext.add(x))}
+ const f=[];if(ext.size)f.push({name:'Подходящие файлы',extensions:[...ext].filter(Boolean)});f.push({name:'Все файлы',extensions:['*']});return f;
+}
+async function fileChooser(t,wc,m){   // окно выбора файла для <input type=file>: страница просит, программа показывает диалог и подставляет файлы
+ if(wc.isDestroyed())return;
+ const r=await openDlg(t.W&&!t.W.dead?t.W.win:undefined,{properties:['openFile',...(m.multiple?['multiSelections']:[])],filters:acceptFilters(m.accept)});
+ if(r.canceled||!r.filePaths||!r.filePaths.length)return;
+ try{
+  const setFiles=async()=>{const ev=await wc.debugger.sendCommand('Runtime.evaluate',{expression:'(window.__mbFI||[])['+Number(m.id)+']'});
+   if(!ev||!ev.result||!ev.result.objectId)throw new Error('поле не найдено');
+   await wc.debugger.sendCommand('DOM.setFileInputFiles',{objectId:ev.result.objectId,files:r.filePaths})};
+  try{await setFiles()}catch(e1){await wc.debugger.sendCommand('DOM.enable');await setFiles()}   // в части версий Chromium для этого нужен включённый домен DOM
+ }catch(e){log('file input: '+e.message);try{await wc.executeJavaScript('window.__mbFileNative&&window.__mbFileNative('+Number(m.id)+')')}catch{}}   // запасной путь: обычное окно Chromium
 }
 function tabByWc(wc){for(const W of windows)for(const t of W.tabs)if(!t.kind&&t.view.webContents===wc)return t;return null}
 function notifyDoc(t){const p=prof(t.pid);if(!p)return;return setDocScript(t,'notify',notifyShim({on:p.notify!==false,m:p.notifyPerms||{}}))}
@@ -1285,7 +1312,7 @@ async function autoBackupTick(force){   // автоматическая заши
 
 // ---------- IPC ----------
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
-H('pickConf',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
+H('pickConf',async()=>{const r=await openDlg(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
  return r.canceled?null:{name:path.basename(r.filePaths[0]),text:fs.readFileSync(r.filePaths[0],'utf8')}});
 function addProfile(d){const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};if((cfg.extAll||[]).length)p.exts=[...cfg.extAll];let note='';if(d.folder)p.folder=String(d.folder).trim().slice(0,60);
  if(d.mode==='vpn'&&d.confText){try{if(parseWg(d.confText).awg){p.vpnNote='awg';note='Обнаружен конфиг AmneziaWG: для него используется отдельное ядро sing-box-lx, параметры маскировки сохраняются.'}}catch(x){return{error:x.message}}p.vpn=enc(d.confText)}
@@ -1333,7 +1360,7 @@ H('dlAction',(e,{id,action})=>{
  pushDownloads()});
 H('find',(e,d)=>{const w=pageWc();if(w&&d.text)w.findInPage(d.text,{forward:d.forward!==false,findNext:!!d.next})});
 H('stopFind',()=>{const w=pageWc();if(w)w.stopFindInPage('clearSelection')});
-H('pickFolder',async()=>{const r=await dialog.showOpenDialog(win,{properties:['openDirectory','createDirectory']});return r.canceled?null:r.filePaths[0]});
+H('pickFolder',async()=>{const r=await openDlg(win,{properties:['openDirectory','createDirectory']});return r.canceled?null:r.filePaths[0]});
 H('getProfile',(e,id)=>{const p=prof(id);if(!p)return null;const x=p.proxy;
  return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:enabledIds(p),color:p.color||'',icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',notify:p.notify!==false,
   conn:{mode:p.vpn?'vpn':x?'proxy':'none',type:x?x.type:'socks5',host:x?x.host:'',port:x?x.port:'',user:(x&&x.user)||'',hasPass:!!(x&&x.pass),hasVpn:!!p.vpn,vpnNote:!!p.vpnNote}}});
@@ -1499,7 +1526,7 @@ H('bkCreate',async()=>{
  const data=await backupData();fs.writeFileSync(r.filePath,bkEncrypt(data,pw));
  return{ok:true,profiles:data.profiles.length,cookies:Object.values(data.cookies).reduce((a,x)=>a+x.length,0)}});
 H('bkRestore',async()=>{
- const r=await dialog.showOpenDialog(win,{filters:[{name:'Резервная копия MultiBrowser',extensions:['mbbak']}],properties:['openFile']});
+ const r=await openDlg(win,{filters:[{name:'Резервная копия MultiBrowser',extensions:['mbbak']}],properties:['openFile']});
  if(r.canceled||!r.filePaths||!r.filePaths[0])return{canceled:true};
  const buf=fs.readFileSync(r.filePaths[0]);let data=null,pw=null;try{pw=cfg.backupPwEnc?dec(cfg.backupPwEnc):null}catch{}
  if(pw){try{data=bkDecrypt(buf,pw)}catch(e){if(!/пароль/i.test(e.message))return{error:e.message}}}
@@ -1519,7 +1546,7 @@ H('bmAdd',(e,{title,url,folder})=>{url=String(url||'').trim();if(!/^(https?|file
 H('bmDelete',(e,ids)=>{const set=new Set(ids||[]);bookmarks=bookmarks.filter(b=>!set.has(b.id));saveBm();pushBm();pushTabs();return true});
 H('bmMove',(e,{ids,folder})=>{const set=new Set(ids||[]),f=String(folder||'').trim().slice(0,60);for(const b of bookmarks)if(set.has(b.id))b.folder=f;saveBm();pushBm();return true});
 H('bmExport',async()=>{const r=await dialog.showSaveDialog(win,{defaultPath:'bookmarks.html',filters:[{name:'Закладки (HTML)',extensions:['html']}]});if(r.canceled||!r.filePath)return{canceled:true};fs.writeFileSync(r.filePath,bookmarksHtml());return{ok:true,n:bookmarks.length}});
-H('bmImport',async()=>{const r=await dialog.showOpenDialog(win,{filters:[{name:'Закладки (HTML)',extensions:['html','htm']}],properties:['openFile']});if(r.canceled||!r.filePaths||!r.filePaths[0])return{canceled:true};
+H('bmImport',async()=>{const r=await openDlg(win,{filters:[{name:'Закладки (HTML)',extensions:['html','htm']}],properties:['openFile']});if(r.canceled||!r.filePaths||!r.filePaths[0])return{canceled:true};
  const items=parseBookmarksHtml(fs.readFileSync(r.filePaths[0],'utf8')),have=new Set(bookmarks.map(b=>b.url+'|'+(b.folder||'')));let n=0;
  for(const b of items){const k=b.url+'|'+b.folder;if(have.has(k))continue;have.add(k);bookmarks.push({id:uid(),title:b.title,url:b.url,folder:b.folder,t:Date.now()});n++}
  saveBm();pushBm();return{ok:true,n}});
