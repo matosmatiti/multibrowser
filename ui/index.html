@@ -56,6 +56,13 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 14px
 <span id="epx" hidden><select id="ect" aria-label="Тип прокси"><option>socks5</option><option>http</option></select> <input id="ech" placeholder="host" size="14"> <input id="ecp" placeholder="порт" size="5"> <input id="ecu" placeholder="логин" size="14"> <input id="ecw" type="password" placeholder="пароль" size="22"></span>
 <span id="evp" hidden><button id="ecpick">Выбрать .conf</button> <span id="ecf" class="m"></span></span>
 <div class="full m">Подключение применяется к новым вкладкам и запускам; уже открытые вкладки перезапусти.</div>
+<div class="full"><b>Отпечаток браузера</b> <span class="m">Пусто = «авто»: значение берётся из номера отпечатка. В обычном режиме подмена идёт скриптом страницы, для максимальной защиты используй усиленный режим.</span></div>
+<span class="m">Номер отпечатка:</span><input id="fpseed" size="11" aria-label="Номер отпечатка"><button id="fpnew">Новый отпечаток</button>
+<select id="fpcores" aria-label="Ядра процессора"></select><select id="fpmem" aria-label="Память"></select><select id="fpscr" aria-label="Экран"></select><select id="fpgpu" aria-label="Видеокарта"></select>
+<label class="cb"><input type="checkbox" id="fpcv"> Шум canvas</label><label class="cb"><input type="checkbox" id="fpau"> Шум аудио</label>
+<select id="fprtc" aria-label="WebRTC"><option value="">WebRTC: авто (только через прокси)</option><option value="proxy">WebRTC: только через прокси</option><option value="public">WebRTC: только публичный адрес</option><option value="default">WebRTC: как в Chrome (может раскрыть IP)</option></select>
+<input id="etz" list="tzl" size="24" placeholder="Часовой пояс (пусто = как есть)" aria-label="Часовой пояс"><datalist id="tzl"></datalist><select id="elang" aria-label="Язык"></select>
+<div class="full m">Часовой пояс и язык можно подобрать автоматически кнопкой «Проверить» в списке профилей: «Применить часовой пояс и язык».</div>
 <div class="full"><b>Сайты и разрешения</b></div>
 <label class="full cb"><input type="checkbox" id="ent"> Разрешать сайтам показывать уведомления</label>
 <div class="full"><button id="erp">Сбросить запомненные разрешения сайтов</button></div>

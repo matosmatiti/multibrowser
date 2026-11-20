@@ -90,7 +90,21 @@ async function editProfile(id){const d=await api.getProfile(id);if(!d)return;eid
  $('eac').checked=!!(d.autoclick&&d.autoclick.on);$('eacr').value=(d.autoclick&&d.autoclick.rules)||'';$('ent').checked=d.notify!==false;
  const lib=await api.scList(),L=$('esl');L.replaceChildren();if(!lib.length)L.append(el('span','Скриптов пока нет.','m'));
  for(const s of lib){const lb=el('label'),cb=el('input');cb.type='checkbox';cb.value=s.id;cb.checked=(d.scripts||[]).includes(s.id);lb.append(cb,s.name);L.append(lb)}
+ await fillFp(d);
  $('edit').hidden=false;$('form').hidden=true;$('imp').hidden=true;$('edit').scrollIntoView({block:'nearest'})}
+const TZS=['Europe/Moscow','Europe/Kyiv','Europe/Minsk','Europe/London','Europe/Berlin','Europe/Paris','Europe/Madrid','Europe/Rome','Europe/Warsaw','Europe/Istanbul','Asia/Dubai','Asia/Tbilisi','Asia/Yerevan','Asia/Almaty','Asia/Tashkent','Asia/Bangkok','Asia/Singapore','Asia/Shanghai','Asia/Tokyo','Asia/Seoul','Asia/Kolkata','Australia/Sydney','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Toronto','America/Sao_Paulo','America/Mexico_City','Africa/Cairo','UTC'];
+const LANGS_UI=[['','Язык: как есть'],['ru-RU','ru-RU русский'],['en-US','en-US английский (США)'],['en-GB','en-GB английский (Великобритания)'],['de-DE','de-DE немецкий'],['fr-FR','fr-FR французский'],['es-ES','es-ES испанский'],['it-IT','it-IT итальянский'],['pt-BR','pt-BR португальский (Бразилия)'],['pl-PL','pl-PL польский'],['uk-UA','uk-UA украинский'],['tr-TR','tr-TR турецкий'],['ja-JP','ja-JP японский'],['ko-KR','ko-KR корейский'],['zh-CN','zh-CN китайский'],['ar-SA','ar-SA арабский']];
+function fillSel(sel,opts,cur){sel.replaceChildren();for(const [v,l] of opts){const o=document.createElement('option');o.value=String(v);o.textContent=l;sel.append(o)}sel.value=cur==null?'':String(cur)}
+async function fillFp(d){const o=await api.fpOptions(),f=d.fp||{},a=d.fpEff.auto;
+ $('fpseed').value=d.seed;
+ fillSel($('fpcores'),[['','Ядер: авто ('+a.cores+')'],...o.cores.map(n=>[n,n+' ядер'])],f.cores);
+ fillSel($('fpmem'),[['','Память: авто ('+a.mem+' ГБ)'],...o.mem.map(n=>[n,n+' ГБ'])],f.mem);
+ fillSel($('fpscr'),[['','Экран: авто ('+a.screen+')'],...o.screens.map(x=>[x,x.replace('x','×')])],f.sw&&f.sh?f.sw+'x'+f.sh:'');
+ fillSel($('fpgpu'),[['','Видеокарта: авто ('+a.gpu+')'],...o.gpus.map((g,i)=>[i,g])],f.gpu);
+ $('fpcv').checked=f.canvas!==false;$('fpau').checked=f.audio!==false;$('fprtc').value=f.webrtc||'';
+ const dl=$('tzl');dl.replaceChildren();for(const z of TZS){const x=document.createElement('option');x.value=z;dl.append(x)}
+ $('etz').value=d.tz||'';fillSel($('elang'),LANGS_UI,d.lang||'')}
+$('fpnew').onclick=()=>{$('fpseed').value=1+Math.floor(Math.random()*2147483000)};
 $('ecm').onchange=showConn;
 $('ecpick').onclick=async()=>{const r=await api.pickConf();if(r){ecConf=r.text;$('ecf').textContent=r.name}};
 $('epick').onclick=async()=>{const f=await api.pickFolder();if(f)$('ed').value=f};
@@ -100,6 +114,8 @@ $('esm').onclick=()=>api.openScripts();
 $('erp').onclick=async()=>{await api.resetPerms(eid);await api.alert('Запомненные разрешения сайтов сброшены.')};
 $('esave').onclick=async()=>{const r=await api.updateProfile({id:eid,name:$('en').value,downloadDir:$('ed').value,color:eColor,icon:eIcon,folder:$('efo').value,tags:$('etg').value.split(',').map(s=>s.trim()).filter(Boolean),start:$('est').value,
  conn:{mode:$('ecm').value,type:$('ect').value,host:$('ech').value,port:$('ecp').value,user:$('ecu').value,pass:$('ecw').value,confText:ecConf},
+ seed:parseInt($('fpseed').value)||undefined,tz:$('etz').value.trim(),lang:$('elang').value,
+ fp:{cores:$('fpcores').value,mem:$('fpmem').value,sw:($('fpscr').value.split('x')[0]||''),sh:($('fpscr').value.split('x')[1]||''),gpu:$('fpgpu').value,canvas:$('fpcv').checked,audio:$('fpau').checked,webrtc:$('fprtc').value},
  autoclick:{on:$('eac').checked,rules:$('eacr').value},notify:$('ent').checked,scripts:[...$('esl').querySelectorAll('input:checked')].map(x=>x.value)});
  if(r&&r.error){await api.alert(r.error);return}$('edit').hidden=true;refresh();if(r&&r.note)await api.alert(r.note)};
 // ---- импорт списком

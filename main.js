@@ -256,11 +256,11 @@ async function newTab(pid,url,bg,afterId){
  on('audio-state-changed',au);on('media-started-playing',au);on('media-paused',au);
  on('enter-html-full-screen',()=>{t.fs=true;win.setFullScreen(true);layout()});on('leave-html-full-screen',()=>{t.fs=false;win.setFullScreen(false);layout()});
  on('zoom-changed',(e,dir)=>zoom(dir==='in'?1:-1));
- wc.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
+ wc.setWebRTCIPHandlingPolicy(rtcPolicy(p));
  const mkReady=()=>{if(!t.ready&&useW(t.W)){t.ready=true;layout();pushTabs();if(t.id===active)focusSoon()}};   // страница показывается, когда готова: без белой вспышки
  once('dom-ready',()=>setTimeout(mkReady,60));setTimeout(mkReady,3500);
  on('did-start-loading',()=>{t.loading=true;pushTabs()});on('did-stop-loading',()=>{t.loading=false;mkReady();pushTabs()});
- applyGeo(wc,p);notifyDoc(t);
+ applyGeo(wc,p);notifyDoc(t);fpDoc(t);
  on('dom-ready',()=>{runScripts(wc,pid,'dom-ready');setTimeout(()=>detectDark(t),250)});on('did-finish-load',()=>{runScripts(wc,pid,'load');setTimeout(()=>detectDark(t),400);setTimeout(()=>detectDark(t),2500)});
  wc.setWindowOpenHandler(({url:u,disposition:d})=>{useW(t.W);newTab(pid,u,d==='background-tab',t.id);return{action:'deny'}});
  on('page-title-updated',(e,s)=>{t.title=s;if(t.h)t.h.title=s;saveHistSoon();pushTabs()});
@@ -288,7 +288,8 @@ async function launch(id,opt){
  else if(p.proxy)proxy=`${p.proxy.type}://${p.proxy.host}:${p.proxy.port}`;
  try{setChromiumDownloadDir(id,p)}catch(e){log('chromium download dir: '+e.message)}
  const args=[`--user-data-dir=${path.join(DATA(),'profiles',id)}`,`--fingerprint=${p.seed}`,'--no-first-run','--no-default-browser-check','--restore-last-session'];
- if(proxy)args.push(`--proxy-server=${proxy}`,'--force-webrtc-ip-handling-policy=disable_non_proxied_udp');
+ const F=fpResolve(p);args.push('--fingerprint-platform=windows','--fingerprint-hardware-concurrency='+F.cores,'--fingerprint-gpu-vendor='+F.gpuV,'--fingerprint-gpu-renderer='+F.gpuR);
+ if(proxy)args.push(`--proxy-server=${proxy}`,'--force-webrtc-ip-handling-policy='+rtcPolicy(p));else if((p.fp||{}).webrtc)args.push('--force-webrtc-ip-handling-policy='+rtcPolicy(p));
  if(p.tz)args.push('--timezone='+p.tz);if(p.lang)args.push('--lang='+p.lang,'--accept-lang='+langsOf(p.lang));
  if(opt.debugPort){args.push('--remote-debugging-port='+opt.debugPort,'--remote-debugging-address=127.0.0.1');job.debugPort=opt.debugPort}
  if(opt.url&&/^https?:\/\//i.test(opt.url))args.push(opt.url);
@@ -1310,6 +1311,60 @@ async function autoBackupTick(force){   // автоматическая заши
  }catch(e){log('auto backup: '+e.message);return{error:e.message}}
 }
 
+// ---------- отпечаток профиля ----------
+// Обычный режим: значения подменяются скриптом в начале страницы. Усиленный режим: те же значения уходят в параметры движка.
+const FP_SCREENS=[[1920,1080],[1920,1080],[1920,1080],[1920,1080],[1366,768],[1366,768],[1536,864],[1536,864],[1440,900],[1600,900],[2560,1440],[1280,720],[1680,1050]];
+const FP_CORES=[4,6,8,8,8,12,16],FP_MEM=[4,8,8,8];
+const FP_GPUS=[
+ ['Google Inc. (NVIDIA)','ANGLE (NVIDIA, NVIDIA GeForce GTX 1650 Direct3D11 vs_5_0 ps_5_0, D3D11)','NVIDIA GeForce GTX 1650'],
+ ['Google Inc. (NVIDIA)','ANGLE (NVIDIA, NVIDIA GeForce RTX 3060 Direct3D11 vs_5_0 ps_5_0, D3D11)','NVIDIA GeForce RTX 3060'],
+ ['Google Inc. (NVIDIA)','ANGLE (NVIDIA, NVIDIA GeForce GTX 1060 6GB Direct3D11 vs_5_0 ps_5_0, D3D11)','NVIDIA GeForce GTX 1060'],
+ ['Google Inc. (Intel)','ANGLE (Intel, Intel(R) UHD Graphics 630 Direct3D11 vs_5_0 ps_5_0, D3D11)','Intel UHD Graphics 630'],
+ ['Google Inc. (Intel)','ANGLE (Intel, Intel(R) Iris(R) Xe Graphics Direct3D11 vs_5_0 ps_5_0, D3D11)','Intel Iris Xe Graphics'],
+ ['Google Inc. (AMD)','ANGLE (AMD, AMD Radeon RX 580 Series Direct3D11 vs_5_0 ps_5_0, D3D11)','AMD Radeon RX 580']];
+function rng(seed){let a=(seed>>>0)||1;return()=>{a=(a+0x6D2B79F5)|0;let t=Math.imul(a^(a>>>15),1|a);t=(t+Math.imul(t^(t>>>7),61|t))^t;return((t^(t>>>14))>>>0)/4294967296}}
+function fpResolve(p){
+ const r=rng((p.seed||1)^0x9e3779b9),pick=l=>l[Math.floor(r()*l.length)],f=p.fp||{};
+ const sc=pick(FP_SCREENS),cores=pick(FP_CORES),mem=pick(FP_MEM),gi=Math.floor(r()*FP_GPUS.length),g=f.gpu!=null&&FP_GPUS[f.gpu]?FP_GPUS[f.gpu]:FP_GPUS[gi];
+ return{cores:f.cores||cores,mem:f.mem||mem,sw:f.sw||sc[0],sh:f.sh||sc[1],gpuV:g[0],gpuR:g[1],canvas:f.canvas!==false,audio:f.audio!==false,webrtc:f.webrtc||'',seed:p.seed||1,
+  auto:{cores,mem,screen:sc[0]+'×'+sc[1],gpu:FP_GPUS[gi][2]}};
+}
+const rtcPolicy=q=>({proxy:'disable_non_proxied_udp',default:'default',public:'default_public_interface_only'})[(q.fp||{}).webrtc]||'disable_non_proxied_udp';
+function fpShim(F){return `(()=>{try{
+ if(window.__mbFP)return;window.__mbFP=1;
+ const C=${JSON.stringify({cores:F.cores,mem:F.mem,sw:F.sw,sh:F.sh,gv:F.gpuV,gr:F.gpuR,seed:F.seed,cv:F.canvas,au:F.audio})};
+ const nat=new WeakMap(),ts=Function.prototype.toString;
+ const mk=(fn,name)=>{try{Object.defineProperty(fn,'name',{value:name,configurable:true})}catch(e){}nat.set(fn,'function '+name+'() { [native code] }');return fn};
+ const tsP=new Proxy(ts,{apply(t,th,a){return nat.has(th)?nat.get(th):Reflect.apply(t,th,a)}});nat.set(tsP,'function toString() { [native code] }');
+ try{Object.defineProperty(Function.prototype,'toString',{value:tsP,writable:true,configurable:true})}catch(e){}
+ const getter=(proto,key,fn)=>{try{const d=Object.getOwnPropertyDescriptor(proto,key);Object.defineProperty(proto,key,{get:mk(fn,'get '+key),set:d?d.set:undefined,enumerable:d?d.enumerable:true,configurable:true})}catch(e){}};
+ getter(Navigator.prototype,'hardwareConcurrency',()=>C.cores);
+ if(window.isSecureContext)getter(Navigator.prototype,'deviceMemory',()=>C.mem);
+ const big=(v,o)=>Math.max(v,window[o]||0);
+ getter(Screen.prototype,'width',()=>big(C.sw,'outerWidth'));getter(Screen.prototype,'height',()=>big(C.sh,'outerHeight'));
+ getter(Screen.prototype,'availWidth',()=>big(C.sw,'outerWidth'));getter(Screen.prototype,'availHeight',()=>big(C.sh-40,'outerHeight'));
+ getter(Screen.prototype,'colorDepth',()=>24);getter(Screen.prototype,'pixelDepth',()=>24);
+ const gl=P=>{if(!P)return;const o=P.getParameter;P.getParameter=mk(function getParameter(p){if(p===37445)return C.gv;if(p===37446)return C.gr;return o.apply(this,arguments)},'getParameter')};
+ gl(window.WebGLRenderingContext&&WebGLRenderingContext.prototype);gl(window.WebGL2RenderingContext&&WebGL2RenderingContext.prototype);
+ const noise=i=>{let x=(i^C.seed)>>>0;x=Math.imul(x^(x>>>16),2246822507);x=Math.imul(x^(x>>>13),3266489909);return(x^(x>>>16))>>>0};
+ if(C.cv&&window.CanvasRenderingContext2D){
+  const perturb=d=>{for(let i=0;i<d.length;i+=4){const h=noise(i);if(h%53===0){const c=h%3;d[i+c]=d[i+c]>0?d[i+c]-1:d[i+c]+1}}};
+  const og=CanvasRenderingContext2D.prototype.getImageData;
+  CanvasRenderingContext2D.prototype.getImageData=mk(function getImageData(){const r=og.apply(this,arguments);try{perturb(r.data)}catch(e){}return r},'getImageData');
+  const copy=cv=>{const c=document.createElement('canvas');c.width=cv.width;c.height=cv.height;const x=c.getContext('2d');x.drawImage(cv,0,0);const id=og.call(x,0,0,c.width,c.height);perturb(id.data);x.putImageData(id,0,0);return c};
+  for(const name of ['toDataURL','toBlob']){const o=HTMLCanvasElement.prototype[name];HTMLCanvasElement.prototype[name]=mk(function(){let t=this;try{if(this.width&&this.height&&this.width*this.height<4e6)t=copy(this)}catch(e){}return o.apply(t,arguments)},name)}
+ }
+ if(C.au&&window.AudioBuffer){const og=AudioBuffer.prototype.getChannelData,done=new WeakSet();
+  AudioBuffer.prototype.getChannelData=mk(function getChannelData(){const d=og.apply(this,arguments);try{if(!done.has(d)){done.add(d);for(let i=0;i<d.length;i+=100)d[i]+=((noise(i)%1000)-500)*1e-10}}catch(e){}return d},'getChannelData')}
+}catch(e){}})();`}
+function fpDoc(t){const q=prof(t.pid);if(!q)return;return setDocScript(t,'fp',fpShim(fpResolve(q)))}
+function reapplyFp(pid){   // после смены отпечатка, часового пояса или языка: новые значения для уже открытых вкладок
+ const q=prof(pid);if(!q)return;
+ for(const W of windows){if(W.dead)continue;for(const t of W.tabs){if(t.kind||t.pid!==pid||t.view.webContents.isDestroyed())continue;
+  const wc=t.view.webContents;applyGeo(wc,q);try{wc.setWebRTCIPHandlingPolicy(rtcPolicy(q))}catch{}fpDoc(t)}}
+ reloadProfileTabs(pid);
+}
+
 // ---------- IPC ----------
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
 H('pickConf',async()=>{const r=await openDlg(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
@@ -1362,12 +1417,21 @@ H('find',(e,d)=>{const w=pageWc();if(w&&d.text)w.findInPage(d.text,{forward:d.fo
 H('stopFind',()=>{const w=pageWc();if(w)w.stopFindInPage('clearSelection')});
 H('pickFolder',async()=>{const r=await openDlg(win,{properties:['openDirectory','createDirectory']});return r.canceled?null:r.filePaths[0]});
 H('getProfile',(e,id)=>{const p=prof(id);if(!p)return null;const x=p.proxy;
- return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:enabledIds(p),color:p.color||'',icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',notify:p.notify!==false,
+ return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:enabledIds(p),fp:p.fp||{},fpEff:fpResolve(p),seed:p.seed||1,tz:p.tz||'',lang:p.lang||'',color:p.color||'',icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',notify:p.notify!==false,
   conn:{mode:p.vpn?'vpn':x?'proxy':'none',type:x?x.type:'socks5',host:x?x.host:'',port:x?x.port:'',user:(x&&x.user)||'',hasPass:!!(x&&x.pass),hasVpn:!!p.vpn,vpnNote:!!p.vpnNote}}});
-H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{error:'Профиль не найден'};const before=JSON.stringify([p.vpn||null,p.proxy||null]);
+H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{error:'Профиль не найден'};const before=JSON.stringify([p.vpn||null,p.proxy||null]),fpBefore=JSON.stringify([p.fp||null,p.seed||null,p.tz||null,p.lang||null]);
  if(d.name&&d.name.trim())p.name=d.name.trim();if(d.downloadDir)p.downloadDir=d.downloadDir;else delete p.downloadDir;
  if(d.autoclick)p.autoclick={on:!!d.autoclick.on,rules:String(d.autoclick.rules||'').slice(0,4000)};
  if(Array.isArray(d.scripts)){p.scripts=d.scripts.filter(x=>allScripts().some(s=>s.id===x));delete p.presets}
+ if(d.fp&&typeof d.fp==='object'){const f=d.fp,o={},num=(v,a,b)=>{v=+v;return Number.isFinite(v)&&v>=a&&v<=b?Math.round(v):undefined};
+  const cores=num(f.cores,1,64),mem=[2,4,8].includes(+f.mem)?+f.mem:undefined,sw=num(f.sw,640,7680),sh=num(f.sh,480,4320);
+  if(cores)o.cores=cores;if(mem)o.mem=mem;if(sw&&sh){o.sw=sw;o.sh=sh}
+  if(f.gpu!==''&&f.gpu!=null&&Number.isInteger(+f.gpu)&&FP_GPUS[+f.gpu])o.gpu=+f.gpu;
+  if(f.canvas===false)o.canvas=false;if(f.audio===false)o.audio=false;if(['proxy','default','public'].includes(f.webrtc))o.webrtc=f.webrtc;
+  if(Object.keys(o).length)p.fp=o;else delete p.fp}
+ if(Number.isInteger(d.seed)&&d.seed>0&&d.seed<2147483647)p.seed=d.seed;
+ if(typeof d.tz==='string'){if(!d.tz.trim())delete p.tz;else if(/^[A-Za-z0-9_\/+\-]{1,40}$/.test(d.tz.trim()))p.tz=d.tz.trim()}
+ if(typeof d.lang==='string'){if(!d.lang.trim())delete p.lang;else if(/^[a-z]{2,3}(-[A-Z]{2})?$/.test(d.lang.trim()))p.lang=d.lang.trim()}
  if(typeof d.notify==='boolean'){p.notify=d.notify;setTimeout(()=>notifyDocAll(p.id),0)}
  if(typeof d.color==='string')p.color=/^#[0-9a-fA-F]{6}$/.test(d.color)?d.color:'';
  if(typeof d.icon==='string'&&d.icon.length<60000&&(d.icon===''||/^emoji:/.test(d.icon)||/^img:data:image\/(png|jpeg|webp);base64,/.test(d.icon)))p.icon=d.icon;
@@ -1388,7 +1452,7 @@ H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{e
    delete p.proxy}
  }
  const changed=JSON.stringify([p.vpn||null,p.proxy||null])!==before;if(changed){delete p.vpnPort;delete p.vpnDns}   // запомненные порт и DNS относились к старому конфигу
- save(l);pushTabs();pushMgr();if(changed)reconnectProfile(p.id).catch(x=>log('reconnect: '+x.message));return{ok:true,note}});
+ save(l);pushTabs();pushMgr();if(changed)reconnectProfile(p.id).catch(x=>log('reconnect: '+x.message));if(JSON.stringify([p.fp||null,p.seed||null,p.tz||null,p.lang||null])!==fpBefore)setTimeout(()=>reapplyFp(p.id),0);return{ok:true,note}});
 H('bmToggle',()=>bmToggle());
 H('bmList',()=>bookmarks);
 H('bmRemove',(e,id)=>{bookmarks=bookmarks.filter(b=>b.id!==id);saveBm();pushBm();pushTabs()});
@@ -1404,7 +1468,8 @@ H('menuGet',()=>menuPayload);
 H('menuResize',(e,h)=>{if(menuOpen&&menuV)menuV.setBounds(menuBounds(menuW,h))});
 H('menuPick',(e,arg)=>{const id=typeof arg==='string'?arg:(arg&&arg.id),mid=!!(arg&&typeof arg==='object'&&arg.mid),f=(mid&&menuAlts.get(id))||menuActs.get(id);hideMenu();focusSoon();if(f)setTimeout(f,0)});
 H('checkConn',(e,id)=>checkConn(id));
-H('applyGeo',(e,{id,tz,lang})=>{const l=load(),p=l.find(x=>x.id===id);if(!p)return false;if(tz)p.tz=tz;else delete p.tz;if(lang)p.lang=lang;else delete p.lang;save(l);pushMgr();return true});
+H('applyGeo',(e,{id,tz,lang})=>{const l=load(),p=l.find(x=>x.id===id);if(!p)return false;if(tz)p.tz=tz;else delete p.tz;if(lang)p.lang=lang;else delete p.lang;save(l);pushMgr();setTimeout(()=>reapplyFp(id),0);return true});
+H('fpOptions',()=>({gpus:FP_GPUS.map(g=>g[2]),screens:[...new Set(FP_SCREENS.map(x=>x[0]+'x'+x[1]))],cores:[2,4,6,8,12,16],mem:[2,4,8]}));
 H('toastGet',()=>toastItem());
 H('toastHover',(e,h)=>{toastHover=!!h;if(!h){clearTimeout(toastT);toastT=setTimeout(hideToast,1800)}});
 H('dlAnchor',(e,r)=>{if(curW)curW.dlRect=r});
