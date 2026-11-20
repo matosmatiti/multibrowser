@@ -36,7 +36,7 @@ function startDrag(e,t,d){
   const n=calc(rect.left+rect.width/2+(ev.clientX-sx));if(n!==idx){idx=n;place()}}
  function up(ev){
   off();try{document.body.releasePointerCapture(e.pointerId)}catch{}
-  if(detached){dragging=false;api.dragEnd({x:ev.screenX,y:ev.screenY});suppress=true;setTimeout(()=>{suppress=false},0);return}
+  if(detached){dragging=false;api.dragEnd({x:ev.screenX,y:ev.screenY});suppress=true;setTimeout(()=>{suppress=false},0);reset(false);lastKey='';render();return}   // вкладки, скрытые на время переноса, снова рисуются
   if(!on){dragging=false;return}
   suppress=true;setTimeout(()=>{suppress=false},0);
   // плавно «садим» вкладку на место, затем сообщаем окну
