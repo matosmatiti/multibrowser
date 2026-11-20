@@ -95,7 +95,17 @@ function openFind(){finding=true;$('aw').hidden=true;$('findbox').hidden=false;$
 function closeFind(){finding=false;$('findbox').hidden=true;$('aw').hidden=false;$('fc').textContent='';api.stopFind()}
 api.onTabs(s=>{if(finding&&s.active!==lastA)closeFind();lastA=s.active;S=s;render()});
 api.onBmState(s=>{BM=s;render()});
-api.onDropHint(on=>{$('top').classList.toggle('drop',on);$('side').classList.toggle('drop',on)});
+const dline=document.createElement('div');dline.id='dline';document.body.append(dline);
+api.onDropHint(h=>{const on=!!h;$('top').classList.toggle('drop',on);$('side').classList.toggle('drop',on);
+ if(h&&typeof h==='object'){const tp=S.mode==='top';dline.style.display='block';
+  if(tp){dline.style.left=(h.line-1)+'px';dline.style.top='6px';dline.style.width='3px';dline.style.height='32px'}
+  else{dline.style.top=(h.line-1)+'px';dline.style.left='6px';dline.style.height='3px';dline.style.width='228px'}}
+ else dline.style.display='none'});
+// положение вкладок сообщаем программе: так при перетаскивании из другого окна вкладка встаёт между нужными вкладками
+let lastGeom='',geomT=0;
+const reportGeom=()=>{geomT=0;const tp=S.mode==='top',g=[...document.querySelectorAll('.tab')].map(el=>{const r=el.getBoundingClientRect();return tp?[Math.round(r.left),Math.round(r.right)]:[Math.round(r.top),Math.round(r.bottom)]}),k=JSON.stringify(g);if(k!==lastGeom){lastGeom=k;api.stripGeom(g)}};
+const schedGeom=()=>{if(!geomT)geomT=requestAnimationFrame(reportGeom)};
+new MutationObserver(schedGeom).observe(document.body,{childList:true,subtree:true,attributes:true,attributeFilter:['style','class']});window.addEventListener('resize',schedGeom);
 api.onDlSummary(s=>{const b=$('dl');b.classList.toggle('act',s.active>0);$('dlb').style.transform='scaleX('+(s.active?Math.max(s.percent,4)/100:0)+')';b.title=s.active?'Загрузки: '+s.active+' ('+s.percent+'%)':'Загрузки (Ctrl+J)'});
 api.onFocusAddr(()=>{const a=$('addr');a.focus();a.select()});
 api.onShowFind(openFind);api.onFindResult(r=>{$('fc').textContent=r.total?r.n+'/'+r.total:'0'});

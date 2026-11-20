@@ -20,6 +20,8 @@ async function init(){const c=await api.getSettings();
  $('bkpw').onclick=async()=>{const r=await api.bkSetPw();if(r.error)await api.alert(r.error);else if(r.ok){await api.alert('Пароль для резервных копий сохранён.');bkShow({hasBackupPw:true})}};
  $('bkc').onclick=async()=>{const r=await api.bkCreate();if(r.error)await api.alert(r.error);else if(r.ok){await api.alert('Копия создана. Профилей: '+r.profiles+', записей входа (куки): '+r.cookies+'.');bkShow({hasBackupPw:true})}};
  $('bkr').onclick=async()=>{const r=await api.bkRestore();if(r.error)await api.alert(r.error);else if(r.ok)await api.alert('Восстановлено. Профилей: '+r.np+', закладок добавлено: '+r.nb+', записей входа: '+r.nc+'.')};
+ $('dgcopy').onclick=async()=>{await api.copyText(await api.diagReport());$('dgst').textContent='Отчёт скопирован в буфер обмена: вставь его в сообщение.'};
+ $('dglog').onclick=()=>api.openLogDir();
  const abUi=x=>{$('abr').hidden=!x.autoBackup;$('abst').textContent=x.lastAutoBackup?'Последняя: '+new Date(x.lastAutoBackup).toLocaleString('ru-RU'):'Ещё не делалась'};
  $('autoBackup').checked=!!c.autoBackup;$('autoBackupDir').value=c.autoBackupDir||'';$('autoBackupDays').value=String(c.autoBackupDays||7);abUi(c);
  $('autoBackup').onchange=async()=>{await save({autoBackup:$('autoBackup').checked});abUi({autoBackup:$('autoBackup').checked,lastAutoBackup:c.lastAutoBackup})};

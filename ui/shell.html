@@ -68,6 +68,7 @@ body.side .tab::after{left:0;right:auto;top:6px;bottom:6px;width:3px;height:auto
 .tab .fav{width:16px;height:16px;border-radius:3px;flex:none;object-fit:contain;pointer-events:none}.tab.cmp .fav{display:none}
 #tabs.dragging .tab:not(.drag){transition:transform .18s cubic-bezier(.2,.8,.2,1),opacity .15s}.tab.drag{z-index:5;box-shadow:0 8px 22px rgba(0,0,0,.45);transform-origin:center;opacity:.97}.tab.mem{opacity:0!important;pointer-events:none}
 .tab.drag[data-n]::after{content:attr(data-n);position:absolute;right:6px;top:-6px;min-width:18px;height:18px;border-radius:9px;background:var(--a);color:#0b1220;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 4px}
+#dline{position:fixed;display:none;background:var(--a);border-radius:2px;z-index:9;pointer-events:none;box-shadow:0 0 8px var(--a)}
 </style></head><body>
 <div id="top"><div id="tabs"></div><button id="plus" class="ib" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></button><button id="tsearch" class="ib" title="Поиск по вкладкам (Ctrl+Shift+A)" aria-label="Поиск по вкладкам"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="6"/><path d="M20 20l-4-4"/></svg></button><div id="grab"></div></div>
 <div id="side"><div id="brand"></div><div id="groups"></div></div>

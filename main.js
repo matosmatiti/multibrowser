@@ -934,11 +934,25 @@ function ctxMenu(t,pr){
 
 // ---------- перетаскивание вкладок между окнами ----------
 let drag=null;
-function stripAt(x,y,exclude){
- for(const W of windows){if(W.dead||W===exclude)continue;const b=W.win.getBounds();
-  if(W.mode==='top'?(x>=b.x&&x<=b.x+b.width&&y>=b.y&&y<=b.y+44):(x>=b.x&&x<=b.x+240&&y>=b.y&&y<=b.y+b.height))return W}
+let focusSeq=0;
+const cursorPt=(x,y)=>{try{const q=screen.getCursorScreenPoint();if(q&&Number.isFinite(q.x)&&Number.isFinite(q.y))return q}catch{}return{x,y}};
+// Куда упадёт вкладка: берём самое верхнее видимое окно под курсором (свёрнутые не считаются);
+// вкладка вставляется только если курсор над его строкой вкладок, место вставки считается по положению курсора между вкладками.
+function dropTarget(x,y,exclude){
+ const cand=windows.filter(W=>!W.dead&&W!==exclude&&W.win&&!W.win.isDestroyed()&&W.win.isVisible()&&!(W.win.isMinimized&&W.win.isMinimized())).sort((a,b)=>(b.fseq||0)-(a.fseq||0));
+ for(const W of cand){
+  const b=W.win.getBounds();
+  if(x<b.x||x>=b.x+b.width||y<b.y||y>=b.y+b.height)continue;     // курсор не над этим окном
+  if(exclude&&!!W.incognito!==!!exclude.incognito)return null;    // обычные и инкогнито окна не смешиваются
+  const top=W.mode==='top';
+  if(top?y>b.y+44:x>b.x+240)return null;                          // над окном, но не над строкой вкладок: оно закрывает окна под собой
+  const cb=W.win.getContentBounds(),pos=top?x-cb.x:y-cb.y,g=W.strip||[];
+  let idx=0;for(const r of g){if(pos>(r[0]+r[1])/2)idx++}
+  return{W,idx,line:idx<g.length?g[idx][0]:(g.length?g[g.length-1][1]:0)};
+ }
  return null;
 }
+ipcMain.on('stripGeom',(e,g)=>{const W=windows.find(w=>!w.dead&&w.win.webContents===e.sender);if(W&&Array.isArray(g))W.strip=g.slice(0,300).map(r=>[+r[0]||0,+r[1]||0])});
 function moveTabToWindow(t,from,to,idx){
  useW(from);const i=tabs.indexOf(t);if(i<0)return;
  tabs.splice(i,1);try{win.contentView.removeChildView(t.view)}catch{}
@@ -1525,14 +1539,14 @@ H('dragStart',(e,{id,ids,x,y,gx,gy})=>{
  }else drag={W:src,t,list,gx,gy,hint:null};
  return true});
 ipcMain.on('dragMove',(e,{x,y})=>{
- if(!drag||drag.W.dead)return;drag.W.win.setPosition(Math.round(x-drag.gx),Math.round(y-drag.gy));
- const T=stripAt(x,y,drag.W);
- if(T!==drag.hint){if(drag.hint&&!drag.hint.dead)drag.hint.win.webContents.send('drop-hint',false);if(T)T.win.webContents.send('drop-hint',true);drag.hint=T}});
+ if(!drag||drag.W.dead)return;const pt=cursorPt(x,y);drag.W.win.setPosition(Math.round(pt.x-drag.gx),Math.round(pt.y-drag.gy));
+ const T=dropTarget(pt.x,pt.y,drag.W),h=drag.hint,same=(!T&&!h)||(T&&h&&T.W===h.W&&T.idx===h.idx);
+ if(!same){if(h&&!h.W.dead&&(!T||T.W!==h.W))h.W.win.webContents.send('drop-hint',false);if(T)T.W.win.webContents.send('drop-hint',{idx:T.idx,line:T.line});drag.hint=T}});
 H('dragEnd',(e,{x,y})=>{
  if(!drag)return;const d=drag;drag=null;
- if(d.hint&&!d.hint.dead)d.hint.win.webContents.send('drop-hint',false);
- const T=d.W.dead?null:stripAt(x,y,d.W);
- if(T){if(d.list&&d.list.length>1)moveTabsToWindow(d.list,d.W,T,null);else moveTabToWindow(d.t,d.W,T,null)}else if(!d.W.dead&&useW(d.W)){layout();pushTabs()}});
+ if(d.hint&&!d.hint.W.dead)d.hint.W.win.webContents.send('drop-hint',false);
+ const pt=cursorPt(x,y),T=d.W.dead?null:dropTarget(pt.x,pt.y,d.W);
+ if(T){if(d.list&&d.list.length>1)moveTabsToWindow(d.list,d.W,T.W,T.idx);else moveTabToWindow(d.t,d.W,T.W,T.idx)}else if(!d.W.dead&&useW(d.W)){layout();pushTabs()}});
 H('tabSearch',(e,a)=>{if(Date.now()-lastMenuBlur<250)return;tabSearch(a)});
 H('muteTab',(e,id)=>{const t=tabs.find(x=>x.id===id);if(!t||t.kind)return;const w=t.view.webContents;w.setAudioMuted(!w.isAudioMuted());t.muted=w.isAudioMuted();pushTabs()});
 H('navMenu',(e,{dir,anchor})=>{const w=pageWc();if(!w)return;const nh=w.navigationHistory,ents=nh.getAllEntries(),ai=nh.getActiveIndex(),items=[];
@@ -1579,6 +1593,12 @@ H('openProfiles',async(e,{ids,newWindow})=>{
  const base=cur();let first=true;
  for(const id of list){await newTab(id,undefined,!first&&true,first&&base&&!newWindow?base.id:undefined);first=false}
  return true});
+H('diagReport',()=>{   // отчёт для поддержки: версии и последние строки журнала без полных IP-адресов и паролей
+ let lines='';try{lines=fs.readFileSync(LOG(),'utf8').split('\n').slice(-120).join('\n')}catch{}
+ const mask=x=>x.replace(/\b(\d{1,3})\.(\d{1,3})\.\d{1,3}\.\d{1,3}\b/g,'$1.$2.x.x').replace(/(password|pass|token|key)=\S+/gi,'$1=***');
+ return mask(['MultiBrowser '+app.getVersion(),'Chromium '+process.versions.chrome+' / Electron '+process.versions.electron,'Windows '+require('os').release(),'Движок усиленного режима: '+(engineVer()||'?'),'Профилей: '+load().length,'','--- журнал ---',lines].join('\n'));
+});
+H('openLogDir',()=>{try{shell.showItemInFolder(LOG())}catch{}return true});
 H('bkAutoNow',()=>autoBackupTick(true));
 H('bkInfo',()=>({hasPw:!!cfg.backupPwEnc}));
 H('bkSetPw',async()=>{const a=await askPw('Придумай пароль для резервных копий');if(!a)return{canceled:true};if(a.length<6)return{error:'Пароль слишком короткий (минимум 6 символов)'};
@@ -1656,6 +1676,7 @@ function createWindow(o={}){
  w.webContents.on('before-input-event',(e,i)=>{if(useW(W)&&hotkey(i,w.webContents))e.preventDefault()});
  w.webContents.on('did-finish-load',c(()=>{layout();pushTabs();pushBm();if(W.first&&!started){started=true;restoreSession()}}));
  for(const ev of ['resize','maximize','unmaximize','enter-full-screen','leave-full-screen'])w.on(ev,c(layout));
+ w.on('focus',()=>{W.fseq=++focusSeq});W.fseq=++focusSeq;
  w.on('close',()=>{
   if(W.incognito)return;
   const othersN=windows.some(x=>!x.dead&&x!==W&&!x.incognito);

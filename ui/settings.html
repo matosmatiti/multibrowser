@@ -48,6 +48,8 @@ input[type=checkbox]{accent-color:var(--a);cursor:pointer}input[type=text]:hover
 <div class="r"><label for="apiOn">Включить локальный API<span class="m">Только на этом компьютере (127.0.0.1), доступ по токену. Запускает и останавливает профили усиленного режима и отдаёт адрес для подключения.</span></label><input type="checkbox" id="apiOn"></div>
 <div class="r" id="apir" hidden><div>Порт и токен<span class="m" id="apist"></span></div><div><input id="apiPort" size="6" aria-label="Порт"> <button id="apiShow">Показать токен</button> <button id="apiCopy">Копировать</button> <button id="apiNew">Новый токен</button></div></div>
 <pre id="apiex" class="m" hidden style="user-select:text;white-space:pre-wrap;margin:4px 0 0;font:12px/1.5 Consolas,monospace"></pre>
+<h2>ДИАГНОСТИКА</h2>
+<div class="r"><div>Если что-то не работает<span class="m" id="dgst">Отчёт содержит версии и последние строки журнала (IP-адреса и пароли скрыты). Просмотри его перед отправкой.</span></div><div><button id="dgcopy">Скопировать отчёт</button> <button id="dglog">Показать файл журнала</button></div></div>
 <h2>ЗАПУСК И ОБНОВЛЕНИЯ</h2>
 <div class="r"><div>Версия Chrome для сайтов<span class="m">Пусто = версия движка. Если сайт пишет «устаревший браузер», укажи, например, 150</span></div><input type="text" id="uaVersion" size="6"></div>
 <div class="r"><label for="openBg">Открывать новые вкладки из меню и по Ctrl+клику в фоне (не переключаться на них)</label><input type="checkbox" id="openBg"></div>
