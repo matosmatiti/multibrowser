@@ -37,5 +37,10 @@ $('bdel').onclick=async()=>{if(await api.confirm('Удалить выбранн�
 $('bmv').onclick=async()=>{await api.bmMove({ids:[...sel],folder:$('mv').value});sel.clear();$('mv').value='';msg('Перенесено');load()};
 $('bopen').onclick=()=>{for(const b of all.filter(x=>sel.has(x.id)))api.openUrl({url:b.url})};
 $('imp').onclick=async()=>{const r=await api.bmImport();if(r&&r.ok){msg('Импортировано закладок: '+r.n);load()}};
+$('chr').onclick=async()=>{const box=$('chrbox');if(!box.hidden){box.hidden=true;return}box.hidden=false;box.replaceChildren(el('span','Ищу браузеры…','m'));
+ const list=await api.bmChromeList();box.replaceChildren();
+ if(!list.length){box.append(el('span','Закладки Chrome, Edge, Brave, Яндекс.Браузера, Vivaldi и Opera не найдены. Можно импортировать HTML-файл кнопкой «Импорт».','m'));return}
+ box.append(el('span','Выбери профиль браузера:','m'));
+ for(const p of list){const b=el('button',p.browser+(p.name&&p.name!==p.browser?' · '+p.name:''));b.onclick=async()=>{b.disabled=true;const r=await api.bmChromeImport({file:p.file});b.disabled=false;if(r&&r.error)msg(r.error);else{msg('Импортировано закладок: '+r.n+' (папка «Из '+p.browser+'…»)');load()}};box.append(b)}};
 $('exp').onclick=async()=>{const r=await api.bmExport();if(r&&r.ok)msg('Экспортировано закладок: '+r.n)};
 api.onBmChanged(load);document.addEventListener('visibilitychange',()=>{if(!document.hidden)load()});load();

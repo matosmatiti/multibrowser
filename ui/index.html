@@ -39,7 +39,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 14px
 <aside><h1>Профили</h1><div id="folders"></div><div class="addf"><input id="nf" placeholder="Новая папка" aria-label="Новая папка"><button id="nfb" title="Создать папку">+</button></div>
 <div class="hd2">Теги</div><div id="tags" class="tg"></div></aside>
 <main>
-<header><input id="q" type="search" placeholder="Поиск по имени, папке, тегу, прокси…" aria-label="Поиск"><div class="seg"><button id="vt">Таблица</button><button id="vc">Карточки</button></div><button id="bulk">Импорт списком</button><button class="p" id="new">+ Новый профиль</button></header>
+<header><input id="q" type="search" placeholder="Поиск по имени, папке, тегу, прокси…" aria-label="Поиск"><select id="sort" aria-label="Сортировка"><option value="name">По имени</option><option value="recent">Недавние сверху</option><option value="new">Новые сверху</option></select><div class="seg"><button id="vt">Таблица</button><button id="vc">Карточки</button></div><button id="bulk">Импорт списком</button><button class="p" id="new">+ Новый профиль</button></header>
 <section id="form" hidden>
 <input id="n" placeholder="Название профиля" aria-label="Название профиля"><input id="nfo" list="fl" placeholder="Папка" size="12" aria-label="Папка">
 <select id="mode" aria-label="Подключение"><option value="none">Без прокси</option><option value="proxy">Прокси</option><option value="vpn">VPN-конфиг (.conf)</option></select>
@@ -55,7 +55,9 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 14px
 <select id="ecm" aria-label="Режим подключения"><option value="none">Без прокси</option><option value="proxy">Прокси</option><option value="vpn">VPN-конфиг (.conf)</option></select>
 <span id="epx" hidden><select id="ect" aria-label="Тип прокси"><option>socks5</option><option>http</option></select> <input id="ech" placeholder="host" size="14"> <input id="ecp" placeholder="порт" size="5"> <input id="ecu" placeholder="логин" size="14"> <input id="ecw" type="password" placeholder="пароль" size="22"></span>
 <span id="evp" hidden><button id="ecpick">Выбрать .conf</button> <span id="ecf" class="m"></span></span>
-<div class="full m">Подключение применяется к новым вкладкам и запускам; уже открытые вкладки перезапусти.</div>
+<label class="full cb" id="ecomp" hidden><input type="checkbox" id="ecompat"> Режим совместимости с другим VPN (меньший MTU): включай, только если профильный VPN конфликтует с системным</label>
+<div class="full m">При сохранении новое подключение применяется и к уже открытым вкладкам профиля (они обновятся).</div>
+<textarea id="enote" class="full" rows="2" spellcheck="false" placeholder="Заметка к профилю (необязательно): для чего он, где аккаунт, срок прокси…" aria-label="Заметка"></textarea>
 <div class="full"><b>Отпечаток браузера</b> <span class="m">Пусто = «авто»: значение берётся из номера отпечатка. В обычном режиме подмена идёт скриптом страницы, для максимальной защиты используй усиленный режим.</span></div>
 <span class="m">Номер отпечатка:</span><input id="fpseed" size="11" aria-label="Номер отпечатка"><button id="fpnew">Новый отпечаток</button>
 <select id="fpcores" aria-label="Ядра процессора"></select><select id="fpmem" aria-label="Память"></select><select id="fpscr" aria-label="Экран"></select><select id="fpgpu" aria-label="Видеокарта"></select>
@@ -73,7 +75,7 @@ table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:9px 14px
 <button class="p" id="esave">Сохранить</button><button id="ecancel">Отмена</button></section>
 <section id="imp" hidden><b class="full">Создать профили списком</b><textarea id="impt" class="full" rows="6" spellcheck="false" placeholder="Каждая строка: Название | прокси&#10;Аккаунт 1 | socks5://user:pass@1.2.3.4:1080&#10;Аккаунт 2 | http://5.6.7.8:8080&#10;Аккаунт 3 (без прокси)"></textarea><button class="p" id="impgo">Создать</button><button id="impx">Отмена</button><span id="impm" class="m"></span></section>
 <section id="chk" hidden><span id="ct"></span><button class="p" id="cgeo" hidden></button><button id="cclose">Закрыть</button></section>
-<div id="sel" hidden><span>Выбрано: <b id="scnt"></b></span><input id="bf" list="fl" placeholder="Папка…" size="12" aria-label="Папка"><button id="bfm">Переместить</button><input id="bt" placeholder="Тег…" size="10" aria-label="Тег"><button id="bta">+ тег</button><button id="btr">− тег</button><button id="bo">Открыть в оболочке</button><button id="bow">В новом окне</button><button id="bd">Удалить</button><button id="bx">Снять выбор</button></div>
+<div id="sel" hidden><span>Выбрано: <b id="scnt"></b></span><input id="bf" list="fl" placeholder="Папка…" size="12" aria-label="Папка"><button id="bfm">Переместить</button><input id="bt" placeholder="Тег…" size="10" aria-label="Тег"><button id="bta">+ тег</button><button id="btr">− тег</button><button id="bchk">Проверить подключение</button><button id="bdup" title="Копия настроек без входов в аккаунты; у копии новый отпечаток">Дублировать</button><button id="bo">Открыть в оболочке</button><button id="bow">В новом окне</button><button id="bd">Удалить</button><button id="bx">Снять выбор</button></div>
 <datalist id="fl"></datalist>
 <div id="content"></div><div id="none" hidden></div>
 </main>

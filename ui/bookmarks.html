@@ -25,7 +25,8 @@ input[type=checkbox]{accent-color:var(--a);width:16px;height:16px;cursor:pointer
 </style></head><body>
 <aside><h1>Закладки</h1><div id="folders"></div><div class="addf"><input id="nf" placeholder="Новая папка" aria-label="Новая папка"><button id="nfb" title="Создать папку">+</button></div></aside>
 <main>
-<header><input id="q" type="search" placeholder="Поиск по закладкам…" aria-label="Поиск"><button class="p" id="add">+ Закладка</button><button id="imp">Импорт</button><button id="exp">Экспорт</button><button id="all">Выбрать все</button></header>
+<header><input id="q" type="search" placeholder="Поиск по закладкам…" aria-label="Поиск"><button class="p" id="add">+ Закладка</button><button id="imp">Импорт</button><button id="exp">Экспорт</button><button id="chr">Из браузера…</button><button id="all">Выбрать все</button></header>
+<div id="chrbox" hidden></div>
 <div id="addbox" hidden><input id="at" placeholder="Название" aria-label="Название"><input id="au" placeholder="https://…" aria-label="Ссылка" size="34"><input id="af" list="fl" placeholder="Папка (необязательно)" aria-label="Папка"><button class="p" id="asave">Добавить</button><button id="acancel">Отмена</button></div>
 <div id="bulk" hidden><span>Выбрано: <b id="cnt"></b></span><button id="bdel">Удалить</button><input id="mv" list="fl" placeholder="Папка…" aria-label="Папка для переноса" size="16"><button id="bmv">Переместить</button><button id="bopen">Открыть все</button><button id="bclr">Снять выбор</button></div>
 <datalist id="fl"></datalist><div id="msg"></div>

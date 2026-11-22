@@ -1,5 +1,5 @@
 // MultiBrowser: своя оболочка (вкладки разных аккаунтов в одном окне) + усиленный режим (движок fingerprint-chromium отдельным окном)
-const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen,clipboard,webContents,Notification}=require('electron');
+const {app,BaseWindow,WebContentsView,BrowserWindow,Menu,session,ipcMain,safeStorage,dialog,nativeTheme,shell,screen,clipboard,webContents,Notification,nativeImage}=require('electron');
 const path=require('path'),fs=require('fs'),net=require('net'),crypto=require('crypto');
 const {spawn,spawnSync}=require('child_process');
 const {autoUpdater}=require('electron-updater');
@@ -9,7 +9,7 @@ const DATA=()=>app.getPath('userData'), FILE=()=>path.join(DATA(),'profiles.json
 const SETF=()=>path.join(app.getPath('userData'),'settings.json');
 try{let sd='force';try{sd=JSON.parse(fs.readFileSync(SETF(),'utf8')).siteDark||'force'}catch{}if(sd==='force')app.commandLine.appendSwitch('enable-features','WebContentsForceDark')}catch{}   // сайты по умолчанию в тёмной теме
 try{app.commandLine.appendSwitch('disable-features','CalculateNativeWinOcclusion,IntensiveWakeUpThrottling');['disable-renderer-backgrounding','disable-background-timer-throttling','disable-backgrounding-occluded-windows'].forEach(x=>app.commandLine.appendSwitch(x))}catch{}   // страницы не уходят в экономный режим
-const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,uaVersion:'',apiOn:false,apiPort:35777,autoBackup:false,autoBackupDir:'',autoBackupDays:7,ver:2};
+const DEF={search:'google',home:'google',customHome:'',theme:'dark',siteDark:'force',adblock:true,restore:true,autoUpdate:true,downloadDir:'',bmBar:false,keepHistory:true,dlToast:true,translateTo:'ru',openBg:true,uaVersion:'',apiOn:false,apiPort:35777,autoBackup:false,autoBackupDir:'',autoBackupDays:7,taskbarBadge:true,ver:2};
 const ENG={google:'https://www.google.com/search?q=',duckduckgo:'https://duckduckgo.com/?q=',bing:'https://www.bing.com/search?q='};
 let cfg={...DEF},manual=false;
 const loadCfg=()=>{try{cfg={...DEF,...JSON.parse(fs.readFileSync(SETF(),'utf8'))}}catch{cfg={...DEF}}
@@ -24,7 +24,7 @@ const searchUrl=()=>ENG[cfg.search]||ENG.google;
 const infoUrl=q=>pathToFileURL(path.join(__dirname,'ui','start.html')).href+'?'+new URLSearchParams({name:q.name,color:colorOf(q.id),icon:q.icon||'',conn:connKind(q),s:searchUrl()}).toString();
 function startUrl(q){const m=q.start||(cfg.home==='info'?'info':'');if(m==='info')return infoUrl(q);if(m==='blank')return 'about:blank';if(q.start==='google')return 'https://www.google.com/';return homeUrl()}
 const shownUrl=u=>/[\\/]ui[\\/]start\.html/.test(u)?'':u;
-const PAGES={extensions:{file:'ui/extensions.html',pid:'_ext',title:'Расширения',icon:'⧉'},scripts:{file:'ui/scripts.html',pid:'_sc',title:'Скрипты',icon:'⚡'},bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
+const PAGES={whatsnew:{file:'ui/whatsnew.html',pid:'_new',title:'Что нового',icon:'✨'},extensions:{file:'ui/extensions.html',pid:'_ext',title:'Расширения',icon:'⧉'},scripts:{file:'ui/scripts.html',pid:'_sc',title:'Скрипты',icon:'⚡'},bookmarks:{file:'ui/bookmarks.html',pid:'_bm',title:'Закладки',icon:'★'},history:{file:'ui/history.html',pid:'_hist',title:'История',icon:'⏱'},manager:{file:'ui/index.html',pid:'_mgr',title:'Профили',icon:'☰'},settings:{file:'ui/settings.html',pid:'_set',title:'Настройки',icon:'⚙'}};
 const running=new Map(),tunnels=new Map();
 const hooked=new Set(),live=new Map(),closedTabs=[],recentClosed=[];
 let menuAlts=new Map(),menuW=270,suggestSel=-1,scripts=[],dlRect=null,toastV=null,toastOpen=false,toastId=null,toastT=null,toastHover=false,flyV=null,menuV=null,menuOpen=false,menuShownAt=0,lastMenuBlur=0,menuActs=new Map(),menuPayload={items:[]},menuAnchor=null,fading=false,bookmarks=[],history=[],histT=null,uidN=0,lastPid=null,downloads=[],panel=null,panelOpen=false,panelShownAt=0,lastBlurHide=0,updating=false;
@@ -62,7 +62,7 @@ const meta=id=>{if(!metaMap)rebuildMeta();return metaMap.get(id)||{}};
 const colorOf=id=>meta(id).color||autoColor(id),iconOf=id=>meta(id).icon||'';
 const connKind=q=>q.vpn?'VPN-конфиг'+(q.vpnNote?' (AWG→WG)':''):q.proxy?q.proxy.type.toUpperCase()+' '+q.proxy.host+':'+q.proxy.port:'Без прокси';
 const pushMgr=()=>{saveSoon();for(const W of windows)for(const t of W.tabs)if(t.kind==='manager'&&!t.view.webContents.isDestroyed())t.view.webContents.send('state',[...running.keys()])};
-const view=()=>load().map(p=>({id:p.id,name:p.name,color:colorOf(p.id),icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',scripts:enabledIds(p),kind:(p.vpn?'VPN-конфиг'+(p.vpnNote?' (AWG→WG)':''):p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси')+(p.tz?' · '+p.tz:'')}));
+const view=()=>load().map(p=>({id:p.id,name:p.name,lastCheck:p.lastCheck||null,note:p.note||'',lastUsed:p.lastUsed||0,created:p.created||0,color:colorOf(p.id),icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',scripts:enabledIds(p),kind:(p.vpn?'VPN-конфиг'+(p.vpnNote?' (AWG→WG)':''):p.proxy?p.proxy.type.toUpperCase()+' '+p.proxy.host+':'+p.proxy.port:'Без прокси')+(p.tz?' · '+p.tz:'')}));
 
 // ---------- подключения: прокси с логином и VPN-конфиги (WireGuard) через sing-box ----------
 const needsTunnel=p=>!!(p.vpn||(p.proxy&&p.proxy.user));
@@ -107,6 +107,7 @@ async function makeTunnel(p,tag,opt){
  opt=opt||{};const port=await freePort(),dir=path.join(DATA(),'run');fs.mkdirSync(dir,{recursive:true});
  const wg=p.vpn?parseWg(dec(p.vpn)):null,lxExe=path.join(RES,'sing-box-lx.exe'),lx=!!(wg&&wg.awg&&fs.existsSync(lxExe));
  if(wg){if(opt.port)wg.port=opt.port;else if(p.vpnPort)wg.port=p.vpnPort;if(opt.dns)wg.dns=opt.dns;else if(p.vpnDns)wg.dns=p.vpnDns}
+ if(wg&&p.vpnCompat)wg.mtu=Math.min(wg.mtu||1280,1200);   // по желанию: меньший MTU, если профильный VPN работает внутри другого VPN
  if(wg&&wg.awg&&!lx&&!wg.awgCompat)throw new Error('Конфиг AmneziaWG требует ядра sing-box-lx, а его нет в этой сборке.');
  const conf=path.join(dir,tag+p.id+'.json'),exe=lx?lxExe:path.join(RES,'sing-box.exe');
  fs.writeFileSync(conf,JSON.stringify(singConfig(p,port,wg,lx)));   // сам конфиг лежит на диске только пока профиль открыт
@@ -143,7 +144,7 @@ async function ensureTunnel(p,tag,start,progress){
   progress('Подбираю порт VPN: '+port+'…');cleanup(t);t=await start({port});cur0=port;ok=await alive(t,5000);
  }
  if(!ok){const info=t.core+': '+t.dump().split('\n').slice(-2).join(' | ');cleanup(t);
-  throw new Error('VPN-сервер не отвечает (проверены порты: '+tried.join(', ')+'). Возможно, порты заблокированы, конфиг просрочен или нужен другой тип подключения. ['+info+']')}
+  throw new Error('VPN-сервер не отвечает (проверены порты: '+tried.join(', ')+'). Возможно, порты заблокированы, конфиг просрочен или нужен другой тип подключения. ['+info+']'+vpnHint())}
  if(cur0!==(p.vpnPort||wg.port)){saveVpn(p.id,{vpnPort:cur0});log('vpn port saved: '+cur0)}   // запоминаем рабочий порт
  if(!await socksProbe(t.port,'one.one.one.one',6000)){   // трафик идёт, а имена не находятся: берём публичный DNS через туннель
   progress('Настраиваю DNS…');cleanup(t);const t2=await start({port:cur0,dns:'1.1.1.1'});
@@ -157,7 +158,7 @@ async function tunnelFor(p){
  if(!t){
   let pr=tunnelPend.get(p.id);
   if(!pr){const W0=curW;
-   pr=(async()=>{setBusy(W0,'Подключаюсь к VPN…');try{const tt=await ensureTunnel(p,'s-',o=>makeTunnel(p,'s-',o),m=>setBusy(W0,m));tt.n=0;tunnels.set(p.id,tt);return tt}
+   pr=(async()=>{warnDupKey(p);setBusy(W0,'Подключаюсь к VPN…');try{const tt=await ensureTunnel(p,'s-',o=>makeTunnel(p,'s-',o),m=>setBusy(W0,m));tt.n=0;tunnels.set(p.id,tt);return tt}
     catch(e){log('tunnel failed: '+e.message);throw e}finally{setBusy(W0,'')}})();
    tunnelPend.set(p.id,pr);pr.then(()=>tunnelPend.delete(p.id),()=>tunnelPend.delete(p.id));}
   t=await pr;
@@ -247,10 +248,10 @@ async function newTab(pid,url,bg,afterId){
  const wc=v.webContents;
  v.setBackgroundColor(pageBg());try{wc.setBackgroundThrottling(false)}catch{}
  const on=(ev,fn)=>wc.on(ev,(...a)=>{if(useW(t.W))fn(...a)}),once=(ev,fn)=>wc.once(ev,(...a)=>{if(useW(t.W))fn(...a)});
- on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;userDocStart(t,u);adCosmetics(t,u);applyDark(t,u);try{const o=new URL(u).origin;if(o!==t.__org){t.__org=o;t.favId='';t.favData=''}}catch{}}});
+ on('did-start-navigation',(e,u,inPlace,main)=>{if(main&&!inPlace){t.blocked=0;t.translated=false;if(t.badge){t.badge=0;updateBadges()}userDocStart(t,u);adCosmetics(t,u);applyDark(t,u);try{const o=new URL(u).origin;if(o!==t.__org){t.__org=o;t.favId='';t.favData=''}}catch{}}});
  on('context-menu',(e,pr)=>ctxMenu(t,pr));
  on('console-message',(...a)=>{const ev=a[0]||{},msg=typeof a[2]==='string'?a[2]:ev.message;if(typeof msg!=='string'||msg.charCodeAt(0)!==1)return;const kind=msg.slice(1,4),data=msg.slice(4);
-  if(kind==='MBN')notifyMsg(wc,data,ev.frame);else if(kind==='MBP')pasteImage(wc,ev.frame);else if(kind==='MBF'){try{fileChooser(t,wc,JSON.parse(data))}catch{}}else if(kind==='MBL'){try{const o=JSON.parse(data);if(/^https?:/i.test(o.u))newTab(t.pid,o.u,!!o.bg,t.id)}catch{}}});
+  if(kind==='MBN')notifyMsg(wc,data,ev.frame);else if(kind==='MBP')pasteImage(wc,ev.frame);else if(kind==='MBB'){try{const o=JSON.parse(data);t.badge=Math.max(0,Math.min(9999,Math.round(o.n<0?1:o.n)||0));updateBadges()}catch{}}else if(kind==='MBF'){try{fileChooser(t,wc,JSON.parse(data))}catch{}}else if(kind==='MBL'){try{const o=JSON.parse(data);if(/^https?:/i.test(o.u))newTab(t.pid,o.u,!!o.bg,t.id)}catch{}}});
  on('page-favicon-updated',(e,icons)=>favFetch(t,icons));
  const au=()=>{const a=wc.isCurrentlyAudible(),m=wc.isAudioMuted();if(t.audible!==a||t.muted!==m){t.audible=a;t.muted=m;if(useW(t.W))pushTabs()}};
  on('audio-state-changed',au);on('media-started-playing',au);on('media-paused',au);
@@ -260,7 +261,7 @@ async function newTab(pid,url,bg,afterId){
  const mkReady=()=>{if(!t.ready&&useW(t.W)){t.ready=true;layout();pushTabs();if(t.id===active)focusSoon()}};   // страница показывается, когда готова: без белой вспышки
  once('dom-ready',()=>setTimeout(mkReady,60));setTimeout(mkReady,3500);
  on('did-start-loading',()=>{t.loading=true;pushTabs()});on('did-stop-loading',()=>{t.loading=false;mkReady();pushTabs()});
- applyGeo(wc,p);notifyDoc(t);fpDoc(t);
+ applyGeo(wc,p);notifyDoc(t);fpDoc(t);touchProfile(p.id);
  on('dom-ready',()=>{runScripts(wc,pid,'dom-ready');setTimeout(()=>detectDark(t),250)});on('did-finish-load',()=>{runScripts(wc,pid,'load');setTimeout(()=>detectDark(t),400);setTimeout(()=>detectDark(t),2500)});
  wc.setWindowOpenHandler(({url:u,disposition:d})=>{useW(t.W);newTab(pid,u,d==='background-tab',t.id);return{action:'deny'}});
  on('page-title-updated',(e,s)=>{t.title=s;if(t.h)t.h.title=s;saveHistSoon();pushTabs()});
@@ -275,13 +276,13 @@ function closeTab(id){
  win.contentView.removeChildView(t.view);t.view.webContents.close();if(t.vpn)dropTunnel(t.pid);
  if(active===id)setActive(tabs.length?tabs[Math.max(0,i-1)].id:null);layout();pushTabs();
  if(!tabs.length&&windows.filter(x=>!x.dead).length>1)win.close();
- focusSoon();
+ focusSoon();updateBadges();
 }
 const norm=s=>{s=s.trim();if(!s)return homeUrl();if(/^[a-z]+:\/\//i.test(s))return s;return /^[^\s]+\.[^\s]{2,}$/.test(s)||/^localhost(:\d+)?/.test(s)?'https://'+s:searchUrl()+encodeURIComponent(s)};
 
 // ---------- усиленный режим: движок fingerprint-chromium отдельным окном ----------
 async function launch(id,opt){
- opt=opt||{};const p=prof(id);if(!p||running.has(id))return;
+ opt=opt||{};const p=prof(id);if(!p||running.has(id))return;touchProfile(id);
  const chrome=findFile(path.join(RES,'engine'),'chrome.exe');if(!chrome)throw new Error('Движок не найден (resources/engine)');
  const job={};let proxy=null;
  if(needsTunnel(p)){const t=await ensureTunnel(p,'e-',o=>makeTunnel(p,'e-',o),()=>{});job.wp=t.wp;job.conf=t.conf;proxy=`socks5://127.0.0.1:${t.port}`}
@@ -586,7 +587,7 @@ async function geoLookup(ses){   // сервисы по очереди: общи
   }catch(e){lastErr=e.message;statuses.push(host+': '+e.message)}}
  return{info:null,statuses,lastErr,alive};
 }
-async function checkConn(id){
+async function checkConnRaw(id){
  const p=prof(id);if(!p)return{error:'Профиль не найден'};
  const sig=id+'|'+JSON.stringify([p.vpn||null,p.proxy||null,p.vpnPort||null]),hit=geoCache.get(sig);
  if(hit&&Date.now()-hit.t<3*60000)return hit.res;
@@ -599,13 +600,17 @@ async function checkConn(id){
   if(!g.info){
    log('check: '+g.statuses.join('; '));
    if(g.alive)return{error:'Подключение работает, но сервисы определения IP не ответили ('+g.statuses.join('; ')+'). Чаще всего это лимит запросов для общего адреса VPN: попробуй позже.'};
-   const t=tunnels.get(id),extra=t&&t.err?' · ядро: '+t.err():'';return{error:'Нет ответа через подключение ('+(g.lastErr||g.statuses.join('; '))+')'+extra};
+   const t=tunnels.get(id),extra=t&&t.err?' · ядро: '+t.err():'';return{error:'Нет ответа через подключение ('+(g.lastErr||g.statuses.join('; '))+')'+extra+vpnHint()};
   }
   const j=g.info,res={ip:j.ip,country:j.country,city:j.city,org:j.org,tz:j.tz,lang:LANG[j.country]||'en-US',ms:Date.now()-t0,provider:g.provider};
   geoCache.set(sig,{t:Date.now(),res});return res;
  }catch(e){const t=tunnels.get(id),extra=t&&t.err?' · ядро: '+t.err():'';log('check: '+e.message+extra+(t&&t.dump?' | '+t.dump():''));return{error:e.message+extra}}
  finally{if(held)dropTunnel(id)}
 }
+
+async function checkConn(id){const r=await checkConnRaw(id);
+ try{const l=load(),q=l.find(x=>x.id===id);if(q){q.lastCheck=r&&!r.error?{ip:r.ip,country:r.country,city:r.city||'',ms:r.ms,t:Date.now()}:{error:String((r&&r.error)||'нет ответа').slice(0,200),t:Date.now()};save(l);pushMgr()}}catch{}
+ return r}
 
 // ---------- всплывающее окно загрузки и анимация «полёта» ----------
 function toastItem(){const d=downloads.find(x=>x.id===toastId);if(!d)return null;const all=load();
@@ -957,7 +962,7 @@ function moveTabToWindow(t,from,to,idx){
  useW(from);const i=tabs.indexOf(t);if(i<0)return;
  tabs.splice(i,1);try{win.contentView.removeChildView(t.view)}catch{}
  if(active===t.id)setActive(tabs.length?tabs[Math.max(0,i-1)].id:null);layout();pushTabs();
- t.W=to;useW(to);tabs.splice(idx==null?tabs.length:idx,0,t);setActive(t.id);win.contentView.addChildView(t.view);layout();pushTabs();to.win.focus();focusSoon();
+ t.W=to;useW(to);tabs.splice(idx==null?tabs.length:idx,0,t);setActive(t.id);win.contentView.addChildView(t.view);layout();pushTabs();to.win.focus();focusSoon();updateBadges();
  if(!from.tabs.length&&!from.dead&&windows.filter(x=>!x.dead).length>1)from.win.close();
 }
 
@@ -1069,6 +1074,10 @@ function notifyShim(C){return `(()=>{try{
  const CF=${JSON.stringify(C)},LOG=console.log.bind(console);
  const st=()=>{if(!CF.on)return 'denied';const v=CF.m[location.origin];return v===true?'granted':v===false?'denied':'default'};let perm=st();
  const send=o=>{try{LOG('\\u0001MBN'+JSON.stringify(o))}catch(e){}};window.__mbPermCb={};window.__mbNotes={};let nid=0;window.__mbSetPerm=v=>{perm=v};
+ // счётчик на значке в панели задач (Badging API): сообщаем программе, она сама показывает и убирает число
+ try{const sendB=n=>{try{LOG('\\u0001MBB'+JSON.stringify({n}))}catch(e){}};
+  Object.defineProperty(Navigator.prototype,'setAppBadge',{value:function setAppBadge(n){sendB(n==null?-1:(Number(n)||0));return Promise.resolve()},writable:true,configurable:true,enumerable:true});
+  Object.defineProperty(Navigator.prototype,'clearAppBadge',{value:function clearAppBadge(){sendB(0);return Promise.resolve()},writable:true,configurable:true,enumerable:true})}catch(e){}
  class N extends EventTarget{
   constructor(title,o){super();o=o||{};this.title=String(title);this.body=o.body||'';this.tag=o.tag||'';this.icon=o.icon||'';this.data=o.data;this.onclick=null;this.onshow=null;this.onclose=null;this.onerror=null;
    const id=++nid;this.__id=id;window.__mbNotes[id]=this;
@@ -1312,6 +1321,65 @@ function apiApply(){
  apiSrv=srv;
 }
 
+// ---------- число на значке в панели задач ----------
+const crcT=(()=>{const t=[];for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0}return t})();
+const crc32=b=>{let c=0xFFFFFFFF;for(const x of b)c=crcT[(c^x)&255]^(c>>>8);return(c^0xFFFFFFFF)>>>0};
+function pngEncode(w,h,rgba){
+ const raw=Buffer.alloc((w*4+1)*h);for(let y=0;y<h;y++){raw[y*(w*4+1)]=0;rgba.copy(raw,y*(w*4+1)+1,y*w*4,(y+1)*w*4)}
+ const chunk=(type,data)=>{const len=Buffer.alloc(4);len.writeUInt32BE(data.length);const td=Buffer.concat([Buffer.from(type),data]),crc=Buffer.alloc(4);crc.writeUInt32BE(crc32(td));return Buffer.concat([len,td,crc])};
+ const ihdr=Buffer.alloc(13);ihdr.writeUInt32BE(w,0);ihdr.writeUInt32BE(h,4);ihdr[8]=8;ihdr[9]=6;
+ return Buffer.concat([Buffer.from([137,80,78,71,13,10,26,10]),chunk('IHDR',ihdr),chunk('IDAT',require('zlib').deflateSync(raw)),chunk('IEND',Buffer.alloc(0))]);
+}
+const BFONT={'0':[14,17,19,21,25,17,14],'1':[4,12,4,4,4,4,14],'2':[14,17,1,2,4,8,31],'3':[30,1,1,14,1,1,30],'4':[2,6,10,18,31,2,2],'5':[31,16,30,1,1,17,14],'6':[6,8,16,30,17,17,14],'7':[31,1,2,4,8,8,8],'8':[14,17,17,14,17,17,14],'9':[14,17,17,15,1,2,12],'+':[0,4,4,31,4,4,0]};
+function badgePng(n){
+ const S=32,buf=Buffer.alloc(S*S*4),txt=n>99?'99+':String(n),sc=txt.length===1?3:(txt.length===2?2:1);
+ for(let y=0;y<S;y++)for(let x=0;x<S;x++){const dx=x-15.5,dy=y-15.5,d=Math.sqrt(dx*dx+dy*dy);if(d<=15){const i=(y*S+x)*4;buf[i]=229;buf[i+1]=72;buf[i+2]=77;buf[i+3]=d>14?Math.max(0,Math.round((15-d)*255)):255}}
+ const gw=5*sc,gap=sc>1?2:1,tw=txt.length*gw+(txt.length-1)*gap,x0=Math.round((S-tw)/2),y0=Math.round((S-7*sc)/2);
+ [...txt].forEach((ch,ci)=>{const g=BFONT[ch];if(!g)return;for(let r=0;r<7;r++)for(let c=0;c<5;c++){if(!(g[r]&(16>>c)))continue;
+  for(let yy=0;yy<sc;yy++)for(let xx=0;xx<sc;xx++){const px=x0+ci*(gw+gap)+c*sc+xx,py=y0+r*sc+yy;if(px>=0&&px<S&&py>=0&&py<S){const i=(py*S+px)*4;buf[i]=255;buf[i+1]=255;buf[i+2]=255;buf[i+3]=255}}}});
+ return pngEncode(S,S,buf);
+}
+function updateBadges(){   // у каждого окна своё число: сумма счётчиков его открытых вкладок
+ for(const W of windows){if(W.dead||!W.win||W.win.isDestroyed())continue;
+  let n=0;if(cfg.taskbarBadge!==false)for(const t of W.tabs)n+=t.badge>0?t.badge:0;
+  if(W.__badge===n)continue;W.__badge=n;
+  try{W.win.setOverlayIcon(n>0?nativeImage.createFromBuffer(badgePng(n)):null,n>0?'Непрочитано: '+n:'')}catch(e){log('badge: '+e.message)}}
+}
+// ---------- VPN: конфликты с другим VPN и дубли ключей ----------
+const wgKey=q=>{try{const m=/PrivateKey\s*=\s*(\S+)/i.exec(dec(q.vpn));return m?m[1]:null}catch{return null}};
+function dupKeyProfile(p,list){const k=wgKey(p);if(!k)return null;return (list||load()).find(x=>x.id!==p.id&&x.vpn&&wgKey(x)===k)||null}
+function sysVpnNames(){try{const out=[];for(const [name,list] of Object.entries(require('os').networkInterfaces())){
+ if(/(wintun|wireguard|\bwg\d*\b|tap-windows|\btap\b|openvpn|nordlynx|proton|mullvad|expressvpn|surfshark|warp|vpn|hiddify|v2ray|clash)/i.test(name)&&(list||[]).some(a=>!a.internal&&a.family==='IPv4'))out.push(name)}return out}catch{return[]}}
+const vpnHint=()=>{const v=sysVpnNames();return v.length?' Обнаружен другой VPN в системе ('+v.join(', ')+'): профильный VPN внутри него может не соединяться. Попробуй включить у профиля «Режим совместимости с другим VPN» или выключить системный VPN на время работы профиля.':''};
+const dupWarned=new Set();
+function warnDupKey(p){
+ const k=wgKey(p);if(!k)return;
+ for(const [pid,tn] of tunnels){if(pid===p.id||!(tn.n>0))continue;const q=prof(pid);if(q&&q.vpn&&wgKey(q)===k){const key=[p.id,pid].sort().join('|');if(dupWarned.has(key))return;dupWarned.add(key);
+  appDialog({title:'VPN',type:'warning',message:'Профили «'+p.name+'» и «'+q.name+'» используют один и тот же ключ WireGuard',detail:'VPN-сервер допускает одно подключение на ключ, поэтому два профиля одновременно будут мешать друг другу. Для каждого профиля создай отдельное устройство в личном кабинете VPN и подставь его конфиг.',buttons:['Понятно']}).catch(()=>{});return}}
+}
+// ---------- импорт закладок из других браузеров ----------
+function browserProfiles(){
+ const L=process.env.LOCALAPPDATA||'',R=process.env.APPDATA||'',out=[];
+ const roots=[['Chrome',path.join(L,'Google','Chrome','User Data')],['Edge',path.join(L,'Microsoft','Edge','User Data')],['Brave',path.join(L,'BraveSoftware','Brave-Browser','User Data')],['Yandex',path.join(L,'Yandex','YandexBrowser','User Data')],['Vivaldi',path.join(L,'Vivaldi','User Data')],['Chromium',path.join(L,'Chromium','User Data')]];
+ for(const [b,dir] of roots){try{if(!fs.existsSync(dir))continue;const names={};
+  try{const ls=JSON.parse(fs.readFileSync(path.join(dir,'Local State'),'utf8'));for(const [k,v] of Object.entries((ls.profile&&ls.profile.info_cache)||{}))names[k]=v.name}catch{}
+  for(const d of fs.readdirSync(dir)){if(d!=='Default'&&!/^Profile \d+$/.test(d))continue;const f=path.join(dir,d,'Bookmarks');if(fs.existsSync(f))out.push({browser:b,dir:d,name:names[d]||d,file:f})}}catch{}}
+ try{const op=path.join(R,'Opera Software','Opera Stable','Bookmarks');if(fs.existsSync(op))out.push({browser:'Opera',dir:'Opera Stable',name:'Opera',file:op})}catch{}
+ return out;
+}
+function parseChromeBookmarks(j){
+ const out=[],walk=(node,trail)=>{if(!node)return;
+  if(node.type==='url'){if(/^(https?|file):/i.test(node.url||''))out.push({title:node.name||node.url,url:node.url,folder:trail.join(' / ')});return}
+  const t2=node.name?[...trail,node.name]:trail;for(const c of node.children||[])walk(c,t2)};
+ const r=(j&&j.roots)||{};
+ for(const [k,label] of [['bookmark_bar','Панель'],['other','Другие'],['synced','С других устройств']]){const n=r[k];if(n)for(const c of n.children||[])walk(c,[label])}
+ return out;
+}
+// ---------- когда профиль последний раз открывали ----------
+const usedPending=new Map();let usedT=null;
+function touchProfile(id){usedPending.set(id,Date.now());if(usedT)return;
+ usedT=setTimeout(()=>{usedT=null;const l=load();let ch=false;for(const [k,v] of usedPending){const q=l.find(x=>x.id===k);if(q){q.lastUsed=v;ch=true}}usedPending.clear();if(ch){save(l);pushMgr()}},8000)}
+
 const engineVer=()=>{try{return fs.readFileSync(path.join(RES,'engine-version.txt'),'utf8').trim()}catch{return ''}};
 async function autoBackupTick(force){   // автоматическая зашифрованная копия в выбранную папку, хранятся 5 последних
  if(!cfg.autoBackup&&!force)return{skipped:'off'};
@@ -1383,9 +1451,10 @@ function reapplyFp(pid){   // после смены отпечатка, часо
 H('list',()=>({profiles:view(),running:[...running.keys()]}));
 H('pickConf',async()=>{const r=await openDlg(win,{filters:[{name:'VPN-конфиг',extensions:['conf']}],properties:['openFile']});
  return r.canceled?null:{name:path.basename(r.filePaths[0]),text:fs.readFileSync(r.filePaths[0],'utf8')}});
-function addProfile(d){const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647)};if((cfg.extAll||[]).length)p.exts=[...cfg.extAll];let note='';if(d.folder)p.folder=String(d.folder).trim().slice(0,60);
+function addProfile(d){const l=load(),p={id:crypto.randomUUID(),name:d.name||'Профиль',seed:crypto.randomInt(1,2147483647),created:Date.now()};if((cfg.extAll||[]).length)p.exts=[...cfg.extAll];let note='';if(d.folder)p.folder=String(d.folder).trim().slice(0,60);
  if(d.mode==='vpn'&&d.confText){try{if(parseWg(d.confText).awg){p.vpnNote='awg';note='Обнаружен конфиг AmneziaWG: для него используется отдельное ядро sing-box-lx, параметры маскировки сохраняются.'}}catch(x){return{error:x.message}}p.vpn=enc(d.confText)}
  else if(d.mode==='proxy'&&d.host){p.proxy={type:d.type,host:d.host,port:d.port};if(d.user){p.proxy.user=d.user;p.proxy.pass=enc(d.pass||'')}}
+ if(p.vpn){const dup=dupKeyProfile(p,l);if(dup)note+=(note?' ':'')+'Этот WireGuard-ключ уже используется в профиле «'+dup.name+'»: два профиля с одним ключом одновременно работают нестабильно (сервер допускает одно подключение на ключ).'}
  l.push(p);save(l);pushTabs();pushMgr();return{ok:true,note,id:p.id}}
 H('add',(e,d)=>addProfile(d));
 H('launch',async(e,id)=>{try{await launch(id);return null}catch(x){return x.message}});
@@ -1415,7 +1484,7 @@ const openManager=bg=>openPage('manager',bg);
 H('openManager',()=>{openManager()});
 H('openSettings',()=>{openPage('settings')});
 H('getSettings',()=>{const {backupPwEnc,apiTokenEnc,...c}=cfg;return{...c,hasBackupPw:!!backupPwEnc,engineVer:engineVer(),chromium:process.versions.chrome,electron:process.versions.electron,version:app.getVersion(),dlDefault:app.getPath('downloads')}});
-H('setSettings',(e,p)=>{for(const k of Object.keys(DEF))if(k in p)cfg[k]=p[k];cfg.apiPort=Math.min(65535,Math.max(1024,parseInt(cfg.apiPort)||35777));saveCfg();applyTheme();layout();pushBm();if('apiOn' in p||'apiPort' in p)apiApply();return true});
+H('setSettings',(e,p)=>{for(const k of Object.keys(DEF))if(k in p)cfg[k]=p[k];cfg.apiPort=Math.min(65535,Math.max(1024,parseInt(cfg.apiPort)||35777));saveCfg();applyTheme();layout();pushBm();if('apiOn' in p||'apiPort' in p)apiApply();updateBadges();return true});
 H('checkUpdates',()=>manualCheck());
 H('toggleDownloads',()=>togglePanel());
 H('dlList',()=>dlList());
@@ -1431,9 +1500,9 @@ H('find',(e,d)=>{const w=pageWc();if(w&&d.text)w.findInPage(d.text,{forward:d.fo
 H('stopFind',()=>{const w=pageWc();if(w)w.stopFindInPage('clearSelection')});
 H('pickFolder',async()=>{const r=await openDlg(win,{properties:['openDirectory','createDirectory']});return r.canceled?null:r.filePaths[0]});
 H('getProfile',(e,id)=>{const p=prof(id);if(!p)return null;const x=p.proxy;
- return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:enabledIds(p),fp:p.fp||{},fpEff:fpResolve(p),seed:p.seed||1,tz:p.tz||'',lang:p.lang||'',color:p.color||'',icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',notify:p.notify!==false,
+ return{id:p.id,name:p.name,downloadDir:p.downloadDir||'',effective:downloadDirFor(p),autoclick:p.autoclick||{on:false,rules:''},scripts:enabledIds(p),fp:p.fp||{},fpEff:fpResolve(p),seed:p.seed||1,tz:p.tz||'',lang:p.lang||'',vpnCompat:!!p.vpnCompat,note:p.note||'',color:p.color||'',icon:p.icon||'',folder:p.folder||'',tags:p.tags||[],start:p.start||'',notify:p.notify!==false,
   conn:{mode:p.vpn?'vpn':x?'proxy':'none',type:x?x.type:'socks5',host:x?x.host:'',port:x?x.port:'',user:(x&&x.user)||'',hasPass:!!(x&&x.pass),hasVpn:!!p.vpn,vpnNote:!!p.vpnNote}}});
-H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{error:'Профиль не найден'};const before=JSON.stringify([p.vpn||null,p.proxy||null]),fpBefore=JSON.stringify([p.fp||null,p.seed||null,p.tz||null,p.lang||null]);
+H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{error:'Профиль не найден'};const before=JSON.stringify([p.vpn||null,p.proxy||null,p.vpnCompat||null]),fpBefore=JSON.stringify([p.fp||null,p.seed||null,p.tz||null,p.lang||null]);
  if(d.name&&d.name.trim())p.name=d.name.trim();if(d.downloadDir)p.downloadDir=d.downloadDir;else delete p.downloadDir;
  if(d.autoclick)p.autoclick={on:!!d.autoclick.on,rules:String(d.autoclick.rules||'').slice(0,4000)};
  if(Array.isArray(d.scripts)){p.scripts=d.scripts.filter(x=>allScripts().some(s=>s.id===x));delete p.presets}
@@ -1446,6 +1515,8 @@ H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{e
  if(Number.isInteger(d.seed)&&d.seed>0&&d.seed<2147483647)p.seed=d.seed;
  if(typeof d.tz==='string'){if(!d.tz.trim())delete p.tz;else if(/^[A-Za-z0-9_\/+\-]{1,40}$/.test(d.tz.trim()))p.tz=d.tz.trim()}
  if(typeof d.lang==='string'){if(!d.lang.trim())delete p.lang;else if(/^[a-z]{2,3}(-[A-Z]{2})?$/.test(d.lang.trim()))p.lang=d.lang.trim()}
+ if(typeof d.vpnCompat==='boolean'){if(d.vpnCompat)p.vpnCompat=true;else delete p.vpnCompat}
+ if(typeof d.note==='string'){const nn=d.note.trim().slice(0,500);if(nn)p.note=nn;else delete p.note}
  if(typeof d.notify==='boolean'){p.notify=d.notify;setTimeout(()=>notifyDocAll(p.id),0)}
  if(typeof d.color==='string')p.color=/^#[0-9a-fA-F]{6}$/.test(d.color)?d.color:'';
  if(typeof d.icon==='string'&&d.icon.length<60000&&(d.icon===''||/^emoji:/.test(d.icon)||/^img:data:image\/(png|jpeg|webp);base64,/.test(d.icon)))p.icon=d.icon;
@@ -1465,7 +1536,8 @@ H('updateProfile',(e,d)=>{const l=load(),p=l.find(x=>x.id===d.id);if(!p)return{e
    else if(!p.vpn)return{error:'Выбери файл VPN-конфига (.conf)'};
    delete p.proxy}
  }
- const changed=JSON.stringify([p.vpn||null,p.proxy||null])!==before;if(changed){delete p.vpnPort;delete p.vpnDns}   // запомненные порт и DNS относились к старому конфигу
+ const changed=JSON.stringify([p.vpn||null,p.proxy||null,p.vpnCompat||null])!==before;if(changed){delete p.vpnPort;delete p.vpnDns}
+ if(changed&&p.vpn){const dup=dupKeyProfile(p,l);if(dup)note+=(note?' ':'')+'Этот WireGuard-ключ уже используется в профиле «'+dup.name+'»: два профиля с одним ключом одновременно работают нестабильно (сервер допускает одно подключение на ключ).'}   // запомненные порт и DNS относились к старому конфигу
  save(l);pushTabs();pushMgr();if(changed)reconnectProfile(p.id).catch(x=>log('reconnect: '+x.message));if(JSON.stringify([p.fp||null,p.seed||null,p.tz||null,p.lang||null])!==fpBefore)setTimeout(()=>reapplyFp(p.id),0);return{ok:true,note}});
 H('bmToggle',()=>bmToggle());
 H('bmList',()=>bookmarks);
@@ -1516,7 +1588,7 @@ H('openScripts',()=>{openPage('scripts')});
 H('importProfiles',(e,text)=>{const l=load(),bad=[];let n=0;
  for(const raw of String(text).split(/\r?\n/)){const line=raw.trim();if(!line||line[0]==='#')continue;
   let nm='',px='';if(line.includes('|')){const i=line.indexOf('|');nm=line.slice(0,i).trim();px=line.slice(i+1).trim()}else if(line.includes(':'))px=line;else nm=line;
-  const p={id:crypto.randomUUID(),name:nm||('Профиль '+(l.length+1)),seed:crypto.randomInt(1,2147483647)};if((cfg.extAll||[]).length)p.exts=[...cfg.extAll];
+  const p={id:crypto.randomUUID(),name:nm||('Профиль '+(l.length+1)),seed:crypto.randomInt(1,2147483647),created:Date.now()};if((cfg.extAll||[]).length)p.exts=[...cfg.extAll];
   if(px){try{const u=new URL(px.includes('://')?px:'socks5://'+px),t=u.protocol.replace(':','');
     if(!['http','https','socks5','socks'].includes(t)||!u.hostname)throw new Error('bad');
     p.proxy={type:t.startsWith('http')?'http':'socks5',host:u.hostname,port:u.port||(t.startsWith('http')?'80':'1080')};
@@ -1599,6 +1671,8 @@ H('diagReport',()=>{   // отчёт для поддержки: версии и 
  return mask(['MultiBrowser '+app.getVersion(),'Chromium '+process.versions.chrome+' / Electron '+process.versions.electron,'Windows '+require('os').release(),'Движок усиленного режима: '+(engineVer()||'?'),'Профилей: '+load().length,'','--- журнал ---',lines].join('\n'));
 });
 H('openLogDir',()=>{try{shell.showItemInFolder(LOG())}catch{}return true});
+H('changelog',()=>{try{return fs.readFileSync(path.join(__dirname,'ui','changelog.md'),'utf8')}catch{return'Список изменений недоступен.'}});
+H('openWhatsNew',()=>{openPage('whatsnew');return true});
 H('bkAutoNow',()=>autoBackupTick(true));
 H('bkInfo',()=>({hasPw:!!cfg.backupPwEnc}));
 H('bkSetPw',async()=>{const a=await askPw('Придумай пароль для резервных копий');if(!a)return{canceled:true};if(a.length<6)return{error:'Пароль слишком короткий (минимум 6 символов)'};
@@ -1622,6 +1696,21 @@ H('bkRestore',async()=>{
 H('apiToken',()=>cfg.apiOn?(apiTok()||apiNewToken()):null);
 H('apiNewToken',()=>{const t=apiNewToken();apiApply();return t});
 H('copyText',(e,t)=>{clipboard.writeText(String(t).slice(0,2000));return true});
+H('checkMany',async(e,ids)=>{   // проверка подключения у нескольких профилей, по три одновременно
+ const list=(ids||[]).filter(id=>prof(id));let i=0,ok=0,bad=0;
+ const run=async()=>{while(i<list.length){const id=list[i++];try{const r=await checkConn(id);if(r&&r.error)bad++;else ok++}catch{bad++}}};
+ await Promise.all([run(),run(),run()]);return{ok,bad,total:list.length}});
+H('profDuplicate',(e,ids)=>{const l=load(),out=[];
+ for(const id of ids||[]){const q=l.find(x=>x.id===id);if(!q)continue;const c=JSON.parse(JSON.stringify(q));
+  c.id=crypto.randomUUID();c.name=(q.name+' (копия)').slice(0,80);c.seed=crypto.randomInt(1,2147483647);c.created=Date.now();
+  for(const k of ['lastUsed','lastCheck','perms','notifyPerms','vpnPort','vpnDns'])delete c[k];l.push(c);out.push(c.id)}
+ save(l);pushMgr();return out});
+H('bmChromeList',()=>browserProfiles().map(({browser,dir,name,file})=>({browser,dir,name,file})));
+H('bmChromeImport',(e,{file})=>{const found=browserProfiles().find(x=>x.file===file);if(!found)return{error:'Профиль браузера не найден'};
+ let j;try{j=JSON.parse(fs.readFileSync(file,'utf8'))}catch(x){return{error:'Не удалось прочитать закладки: '+x.message}}
+ const items=parseChromeBookmarks(j),have=new Set(bookmarks.map(b=>b.url+'|'+(b.folder||''))),pre='Из '+found.browser+(found.name&&found.name!==found.browser&&found.name!=='Default'?': '+found.name:'');let n=0;
+ for(const b of items){const folder=(pre+(b.folder?' / '+b.folder:'')).slice(0,60),k=b.url+'|'+folder;if(have.has(k))continue;have.add(k);bookmarks.push({id:uid(),title:b.title,url:b.url,folder,t:Date.now()});n++}
+ saveBm();pushBm();return{ok:true,n}});
 H('moveTabs',(e,{ids,to})=>{const set=new Set(ids||[]),moving=tabs.filter(t=>set.has(t.id));if(!moving.length)return;const rest=tabs.filter(t=>!set.has(t.id));rest.splice(Math.max(0,Math.min(to,rest.length)),0,...moving);tabs.splice(0,tabs.length,...rest);pushTabs()});
 H('moveTab',(e,{id,to})=>{const i=tabs.findIndex(x=>x.id===id);if(i<0)return;const [t]=tabs.splice(i,1);tabs.splice(Math.max(0,Math.min(to,tabs.length)),0,t);pushTabs()});
 H('detachTab',(e,{id,x,y})=>detachTab(id,x,y));
@@ -1687,13 +1776,31 @@ function createWindow(o={}){
   if(!windows.length){quitting=true;app.quit()}else{if(curW===W)useW(windows[windows.length-1]);if(!quitting&&windows.some(x=>!x.incognito))saveSoon()}});
  useW(W);return W;
 }
+const gotLock=typeof app.requestSingleInstanceLock!=='function'||app.requestSingleInstanceLock();   // вторая копия программы не запускается: показывается первая
+if(!gotLock)app.quit();
+app.on('second-instance',(e,argv)=>{
+ const W=windows.filter(x=>!x.dead).sort((a,b)=>(b.fseq||0)-(a.fseq||0))[0];
+ if(W){try{if(W.win.isMinimized())W.win.restore();W.win.show();W.win.focus()}catch{}}
+ const u=(argv||[]).find(a=>/^https?:\/\//i.test(a));if(u&&W&&useW(W))openUrl(u);
+});
+app.on('certificate-error',(e,wc,url,error,cert,cb)=>{   // свои локальные серверы с самоподписанным сертификатом: только петля (localhost, 127.0.0.1)
+ let h='';try{h=new URL(url).hostname}catch{}
+ if(h==='localhost'||h==='127.0.0.1'||h==='[::1]'||h==='::1'){e.preventDefault();cb(true)}else cb(false)});
+app.on('render-process-gone',(e,wc,d)=>{   // вкладка упала: обновляем её сама, не больше трёх раз в минуту
+ log('render gone: '+(d&&d.reason));const t=tabByWc(wc);if(!t||!d||d.reason==='clean-exit'||d.reason==='killed')return;
+ t.crashes=(t.crashes||[]).filter(x=>Date.now()-x<60000);t.crashes.push(Date.now());
+ if(t.crashes.length<=3)setTimeout(()=>{try{if(!wc.isDestroyed())wc.reload()}catch{}},800)});
+app.on('child-process-gone',(e,d)=>log('child gone: '+((d&&d.type)||'?')+' '+((d&&d.reason)||'')));
+function showWhatsNew(){const v=app.getVersion(),prev=cfg.lastVer;cfg.lastVer=v;saveCfg();
+ if(prev&&prev!==v){const W=windows.find(w=>!w.dead&&!w.incognito);if(W&&useW(W))openPage('whatsnew')}}
 app.whenReady().then(()=>{
+ if(!gotLock)return;
  loadCfg();applyTheme();loadDownloads();loadBm();loadScripts();loadAds();loadEngine(false).catch(()=>{});
  try{if(fs.statSync(LOG()).size>200000)fs.rmSync(LOG())}catch{}
  log('start v'+app.getVersion());
  try{app.setAppUserModelId('app.multibrowser')}catch{}
  Menu.setApplicationMenu(null);
- createWindow({first:true});ensureFly();apiApply();
+ createWindow({first:true});ensureFly();apiApply();setTimeout(()=>showWhatsNew(),3500);
  setupUpdater();setTimeout(()=>extUpdateAll().catch(()=>{}),90000);setInterval(()=>extUpdateAll().catch(()=>{}),24*3600*1000);setTimeout(()=>autoBackupTick().catch(()=>{}),30000);setInterval(()=>autoBackupTick().catch(()=>{}),6*3600*1000);
  setTimeout(()=>updateAds(false).catch(()=>{}),15000);setInterval(()=>updateAds(false).catch(()=>{}),12*3600*1000);
  nativeTheme.on('updated',()=>{broadcastTheme();for(const W of windows){if(W.dead)continue;try{if(!W.incognito)W.win.setTitleBarOverlay(ovl());W.win.setBackgroundColor(bgColor());for(const t of W.tabs)if(t.kind)t.view.setBackgroundColor(bgColor())}catch{}}

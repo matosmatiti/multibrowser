@@ -3,7 +3,7 @@ function flash(){const o=$('ok');o.textContent='Сохранено';clearTimeout
 async function save(p){await api.setSettings(p);flash()}
 async function init(){const c=await api.getSettings();
  for(const k of ['search','home','theme','siteDark','translateTo'])$(k).value=c[k];
- for(const k of ['restore','autoUpdate','bmBar','keepHistory','dlToast','adblock','openBg'])$(k).checked=!!c[k];
+ for(const k of ['restore','autoUpdate','bmBar','keepHistory','dlToast','adblock','openBg','taskbarBadge'])$(k).checked=!!c[k];
  const showDd=c=>{$('ddv').textContent=c.downloadDir||('Системная: '+c.dlDefault)};showDd(c);
  $('dd').onclick=async()=>{const f=await api.pickFolder();if(f){c.downloadDir=f;showDd(c);save({downloadDir:f})}};
  $('ddr').onclick=()=>{c.downloadDir='';showDd(c);save({downloadDir:''})};
@@ -12,7 +12,7 @@ async function init(){const c=await api.getSettings();
  $('siteDark').onchange=()=>{save({siteDark:$('siteDark').value});api.alert('Изменение применится после перезапуска программы.')};
  $('home').onchange=()=>{$('cr').hidden=$('home').value!=='custom';save({home:$('home').value})};
  $('custom').onchange=()=>save({customHome:$('custom').value.trim()});
- for(const k of ['restore','autoUpdate','bmBar','keepHistory','dlToast','adblock','openBg'])$(k).onchange=()=>save({[k]:$(k).checked});
+ for(const k of ['restore','autoUpdate','bmBar','keepHistory','dlToast','adblock','openBg','taskbarBadge'])$(k).onchange=()=>save({[k]:$(k).checked});
  const adShow=async()=>{const i=await api.adInfo();$('adv').textContent=(i.engine?'Усиленный режим (фильтры EasyList и uBlock). ':'Базовый режим (список доменов). ')+i.domains+' доменов'+(i.updated?', обновлено '+new Date(i.updated).toLocaleDateString('ru-RU'):'')};adShow();
  $('adu').onclick=async()=>{$('adu').disabled=true;$('adu').textContent='Обновляю…';await api.adUpdate();$('adu').disabled=false;$('adu').textContent='Обновить сейчас';adShow();flash()};
  $('uaVersion').value=c.uaVersion||'';$('uaVersion').onchange=()=>save({uaVersion:$('uaVersion').value.trim()});
@@ -20,6 +20,7 @@ async function init(){const c=await api.getSettings();
  $('bkpw').onclick=async()=>{const r=await api.bkSetPw();if(r.error)await api.alert(r.error);else if(r.ok){await api.alert('Пароль для резервных копий сохранён.');bkShow({hasBackupPw:true})}};
  $('bkc').onclick=async()=>{const r=await api.bkCreate();if(r.error)await api.alert(r.error);else if(r.ok){await api.alert('Копия создана. Профилей: '+r.profiles+', записей входа (куки): '+r.cookies+'.');bkShow({hasBackupPw:true})}};
  $('bkr').onclick=async()=>{const r=await api.bkRestore();if(r.error)await api.alert(r.error);else if(r.ok)await api.alert('Восстановлено. Профилей: '+r.np+', закладок добавлено: '+r.nb+', записей входа: '+r.nc+'.')};
+ $('wn').onclick=()=>api.openWhatsNew();
  $('dgcopy').onclick=async()=>{await api.copyText(await api.diagReport());$('dgst').textContent='Отчёт скопирован в буфер обмена: вставь его в сообщение.'};
  $('dglog').onclick=()=>api.openLogDir();
  const abUi=x=>{$('abr').hidden=!x.autoBackup;$('abst').textContent=x.lastAutoBackup?'Последняя: '+new Date(x.lastAutoBackup).toLocaleString('ru-RU'):'Ещё не делалась'};

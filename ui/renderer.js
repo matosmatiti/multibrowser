@@ -1,6 +1,6 @@
 const $=i=>document.getElementById(i);
 const el=(t,x,c)=>{const e=document.createElement(t);if(x!=null)e.textContent=x;if(c)e.className=c;return e};
-let limit=150,lastSig='',all=[],run=[],folder='*',tagSel=new Set(),sel=new Set(),view=localStorage.getItem('mbView')||'table',conf=null;
+let sortBy=localStorage.getItem('mbSort')||'name',limit=150,lastSig='',all=[],run=[],folder='*',tagSel=new Set(),sel=new Set(),view=localStorage.getItem('mbView')||'table',conf=null;
 const PAL=['#ff7a59','#e5484d','#ff6b9a','#b58cff','#6a4c93','#4c8dff','#2ec4c4','#3ecf8e','#8ac926','#ffc247','#9aa5b8','#5b6478'];
 const EMO=['💼','🛒','📣','🎮','🎬','📷','🧪','🔒','🏠','💬','📧','📱','💡','🚀','🌍','⭐','🔥','🎯','💰','🛠️','🎵','📚','🤖','🧿'];
 function icon(p,big){const s=el('span',null,'ic'+(big?' big':'')),im=p.icon&&p.icon.startsWith('img:');
@@ -9,8 +9,12 @@ function icon(p,big){const s=el('span',null,'ic'+(big?' big':'')),im=p.icon&&p.i
  else if(p.icon&&p.icon.startsWith('emoji:'))s.textContent=p.icon.slice(6);else s.textContent=(p.name||'?')[0].toUpperCase();return s}
 const names=()=>[...new Set(all.map(p=>p.folder).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru'));
 const alltags=()=>{const m=new Map();for(const p of all)for(const t of p.tags||[])m.set(t,(m.get(t)||0)+1);return [...m.entries()].sort((a,b)=>a[0].localeCompare(b[0],'ru'))};
+const flag=cc=>cc&&/^[A-Za-z]{2}$/.test(cc)?String.fromCodePoint(...[...cc.toUpperCase()].map(c=>127397+c.charCodeAt(0))):'';
+const checkText=p=>{const c=p.lastCheck;if(!c)return '';return c.error?'⚠ '+c.error.slice(0,60):(flag(c.country)+' '+c.ip+' · '+c.ms+' мс').trim()};
+const checkTitle=p=>{const c=p.lastCheck;return c?(c.error?c.error:[c.city,c.country].filter(Boolean).join(', ')+' · проверено '+new Date(c.t).toLocaleString('ru-RU')):''};
+const sorted=l=>{const a=l.slice();if(sortBy==='recent')a.sort((x,y)=>(y.lastUsed||0)-(x.lastUsed||0)||x.name.localeCompare(y.name,'ru'));else if(sortBy==='new')a.sort((x,y)=>(y.created||0)-(x.created||0)||x.name.localeCompare(y.name,'ru'));else a.sort((x,y)=>x.name.localeCompare(y.name,'ru'));return a};
 const visible=()=>{const q=$('q').value.trim().toLowerCase();
- return all.filter(p=>(folder==='*'||(p.folder||'')===folder)&&[...tagSel].every(t=>(p.tags||[]).includes(t))&&(!q||(p.name+' '+(p.folder||'')+' '+(p.tags||[]).join(' ')+' '+p.kind).toLowerCase().includes(q)))};
+ return sorted(all).filter(p=>(folder==='*'||(p.folder||'')===folder)&&[...tagSel].every(t=>(p.tags||[]).includes(t))&&(!q||(p.name+' '+(p.folder||'')+' '+(p.tags||[]).join(' ')+' '+p.kind+' '+(p.note||'')+' '+checkText(p)).toLowerCase().includes(q)))};
 function chips(box,p){if(p.folder)box.append(el('span','📁 '+p.folder,'chip'));for(const t of p.tags||[])box.append(el('span','#'+t,'chip'))}
 function renameFolder(old,row){const i=el('input');i.value=old;row.replaceChildren(i);i.focus();i.select();let done=false;
  const fin=async ok=>{if(done)return;done=true;const v=i.value.trim();if(ok&&v&&v!==old){await api.profMeta({ids:all.filter(p=>p.folder===old).map(p=>p.id),folder:v});if(folder===old)folder=v}refresh()};
@@ -36,19 +40,20 @@ function draw(){drawSide();const sig=folder+'|'+[...tagSel].join(',')+'|'+$('q')
  $('vt').classList.toggle('on',view==='table');$('vc').classList.toggle('on',view==='cards');
  $('none').hidden=full.length>0;$('none').textContent=all.length?'Ничего не найдено.':'Профилей пока нет. Нажми «+ Новый профиль» и создай первый.';
  $('sel').hidden=!sel.size;$('scnt').textContent=sel.size;
- if(view==='table'){const tb=document.createElement('table');tb.innerHTML='<thead><tr><th></th><th>ПРОФИЛЬ</th><th>ПОДКЛЮЧЕНИЕ</th><th>СТАТУС</th><th></th></tr></thead>';const body=document.createElement('tbody');
+ if(view==='table'){const tb=document.createElement('table');tb.innerHTML='<thead><tr><th></th><th>ПРОФИЛЬ</th><th>ПОДКЛЮЧЕНИЕ</th><th>ПРОВЕРКА</th><th>СТАТУС</th><th></th></tr></thead>';const body=document.createElement('tbody');
   for(const p of list){const on=run.includes(p.id),tr=document.createElement('tr'),c0=document.createElement('td'),cb=el('input');pick(cb,p);c0.append(cb);
-   const c1=document.createElement('td'),nm=el('div',null,'nm'),tx=el('div');tx.append(el('b',p.name));chips(tx,p);nm.append(icon(p),tx);c1.append(nm);
-   const c2=el('td',p.kind,'m'),c3=el('td',on?'● Запущен':'○ Остановлен',on?'on2':'m'),c4=document.createElement('td');c4.append(actions(p,on));tr.append(c0,c1,c2,c3,c4);body.append(tr)}
+   const c1=document.createElement('td'),nm=el('div',null,'nm'),tx=el('div');tx.append(el('b',p.name));chips(tx,p);if(p.note){const nn=el('div',p.note.length>90?p.note.slice(0,90)+'…':p.note,'m');nn.title=p.note;nn.style.fontSize='12px';tx.append(nn)}nm.append(icon(p),tx);c1.append(nm);
+   const c2=el('td',p.kind,'m'),cc=el('td',checkText(p),'m'),c3=el('td',on?'● Запущен':'○ Остановлен',on?'on2':'m'),c4=document.createElement('td');cc.title=checkTitle(p);c4.append(actions(p,on));tr.append(c0,c1,c2,cc,c3,c4);body.append(tr)}
   tb.append(body);C.append(tb)}
  else{const g=el('div',null,'cards');
   for(const p of list){const on=run.includes(p.id),c=el('div',null,'card'),top=el('div',null,'top'),cb=el('input');pick(cb,p);
    const nm=el('div',null,'nm2');nm.append(el('b',p.name),el('div',on?'● Запущен':'○ Остановлен',on?'on2':'m'));top.append(cb,icon(p,true),nm);
-   const ch=el('div');chips(ch,p);c.append(top,ch,el('div',p.kind,'m'),actions(p,on));g.append(c)}C.append(g)}
+   const ch=el('div');chips(ch,p);const ck=el('div',checkText(p),'m');ck.title=checkTitle(p);c.append(top,ch,el('div',p.kind,'m'),ck);if(p.note){const nn=el('div',p.note.length>110?p.note.slice(0,110)+'…':p.note,'m');nn.title=p.note;c.append(nn)}c.append(actions(p,on));g.append(c)}C.append(g)}
  if(full.length>limit){const more=el('button','Показать ещё ('+(full.length-limit)+')');more.style.margin='12px 16px';more.onclick=()=>{limit+=150;draw()};C.append(more)}}
 async function refresh(){const d=await api.list();all=d.profiles;run=d.running;const ids=new Set(all.map(p=>p.id));for(const i of [...sel])if(!ids.has(i))sel.delete(i);if(!all.length)$('form').hidden=false;draw()}
 // ---- поиск, вид, папки
 $('q').oninput=draw;
+$('sort').value=sortBy;$('sort').onchange=()=>{sortBy=$('sort').value;localStorage.setItem('mbSort',sortBy);draw()};
 $('vt').onclick=()=>{view='table';localStorage.setItem('mbView',view);draw()};$('vc').onclick=()=>{view='cards';localStorage.setItem('mbView',view);draw()};
 $('nfb').onclick=()=>{const v=$('nf').value.trim();if(!v)return;$('nfo').value=v;$('bf').value=v;$('nf').value='';$('form').hidden=false;$('edit').hidden=true;$('imp').hidden=true;$('n').focus()};
 $('nf').onkeydown=e=>{if(e.key==='Enter')$('nfb').click()};
@@ -59,6 +64,8 @@ $('btr').onclick=async()=>{const t=$('bt').value.trim();if(!t)return;await api.p
 $('bo').onclick=()=>api.openProfiles({ids:[...sel]});$('bow').onclick=()=>api.openProfiles({ids:[...sel],newWindow:true});
 $('bd').onclick=async()=>{if(await api.confirm('Удалить выбранные профили ('+sel.size+')?')){for(const id of [...sel])await api.remove(id);sel.clear();refresh()}};
 $('bx').onclick=()=>{sel.clear();draw()};
+$('bchk').onclick=async()=>{const b=$('bchk'),n=sel.size;b.disabled=true;b.textContent='Проверяю ('+n+')…';try{const r=await api.checkMany([...sel])}finally{b.disabled=false;b.textContent='Проверить подключение';refresh()}};
+$('bdup').onclick=async()=>{await api.profDuplicate([...sel]);sel.clear();refresh()};
 // ---- новый профиль
 $('mode').onchange=()=>{const m=$('mode').value;$('px').hidden=m!=='proxy';$('pick').hidden=m!=='vpn'};
 $('pick').onclick=async()=>{const r=await api.pickConf();if(r){conf=r.text;$('cf').textContent=r.name}};
@@ -80,7 +87,7 @@ $('eimg').onchange=()=>{const f=$('eimg').files[0];if(!f)return;const r=new File
  r.onload=()=>{const im=new Image();im.onload=()=>{const c=document.createElement('canvas');c.width=c.height=64;const g=c.getContext('2d'),s=Math.min(im.width,im.height);g.drawImage(im,(im.width-s)/2,(im.height-s)/2,s,s,0,0,64,64);eIcon='img:'+c.toDataURL('image/png');emojis();prev()};im.src=r.result};
  r.readAsDataURL(f);$('eimg').value=''};
 $('en').oninput=prev;
-function showConn(){const m=$('ecm').value;$('epx').hidden=m!=='proxy';$('evp').hidden=m!=='vpn'}
+function showConn(){const m=$('ecm').value;$('epx').hidden=m!=='proxy';$('evp').hidden=m!=='vpn';$('ecomp').hidden=m!=='vpn'}
 async function editProfile(id){const d=await api.getProfile(id);if(!d)return;eid=id;ecConf=null;
  const base=all.find(p=>p.id===id);eBase=(base&&base.color)||'#8b93a5';eColor=d.color||'';eIcon=d.icon||'';
  $('en').value=d.name;$('efo').value=d.folder||'';$('etg').value=(d.tags||[]).join(', ');$('est').value=d.start||'';$('ecustom').value=eColor||eBase;swatches();emojis();prev();
@@ -90,7 +97,7 @@ async function editProfile(id){const d=await api.getProfile(id);if(!d)return;eid
  $('eac').checked=!!(d.autoclick&&d.autoclick.on);$('eacr').value=(d.autoclick&&d.autoclick.rules)||'';$('ent').checked=d.notify!==false;
  const lib=await api.scList(),L=$('esl');L.replaceChildren();if(!lib.length)L.append(el('span','Скриптов пока нет.','m'));
  for(const s of lib){const lb=el('label'),cb=el('input');cb.type='checkbox';cb.value=s.id;cb.checked=(d.scripts||[]).includes(s.id);lb.append(cb,s.name);L.append(lb)}
- await fillFp(d);
+ await fillFp(d);$('enote').value=d.note||'';$('ecompat').checked=!!d.vpnCompat;
  $('edit').hidden=false;$('form').hidden=true;$('imp').hidden=true;$('edit').scrollIntoView({block:'nearest'})}
 const TZS=['Europe/Moscow','Europe/Kyiv','Europe/Minsk','Europe/London','Europe/Berlin','Europe/Paris','Europe/Madrid','Europe/Rome','Europe/Warsaw','Europe/Istanbul','Asia/Dubai','Asia/Tbilisi','Asia/Yerevan','Asia/Almaty','Asia/Tashkent','Asia/Bangkok','Asia/Singapore','Asia/Shanghai','Asia/Tokyo','Asia/Seoul','Asia/Kolkata','Australia/Sydney','America/New_York','America/Chicago','America/Denver','America/Los_Angeles','America/Toronto','America/Sao_Paulo','America/Mexico_City','Africa/Cairo','UTC'];
 const LANGS_UI=[['','Язык: как есть'],['ru-RU','ru-RU русский'],['en-US','en-US английский (США)'],['en-GB','en-GB английский (Великобритания)'],['de-DE','de-DE немецкий'],['fr-FR','fr-FR французский'],['es-ES','es-ES испанский'],['it-IT','it-IT итальянский'],['pt-BR','pt-BR португальский (Бразилия)'],['pl-PL','pl-PL польский'],['uk-UA','uk-UA украинский'],['tr-TR','tr-TR турецкий'],['ja-JP','ja-JP японский'],['ko-KR','ko-KR корейский'],['zh-CN','zh-CN китайский'],['ar-SA','ar-SA арабский']];
@@ -114,7 +121,7 @@ $('esm').onclick=()=>api.openScripts();
 $('erp').onclick=async()=>{await api.resetPerms(eid);await api.alert('Запомненные разрешения сайтов сброшены.')};
 $('esave').onclick=async()=>{const r=await api.updateProfile({id:eid,name:$('en').value,downloadDir:$('ed').value,color:eColor,icon:eIcon,folder:$('efo').value,tags:$('etg').value.split(',').map(s=>s.trim()).filter(Boolean),start:$('est').value,
  conn:{mode:$('ecm').value,type:$('ect').value,host:$('ech').value,port:$('ecp').value,user:$('ecu').value,pass:$('ecw').value,confText:ecConf},
- seed:parseInt($('fpseed').value)||undefined,tz:$('etz').value.trim(),lang:$('elang').value,
+ note:$('enote').value,vpnCompat:$('ecompat').checked,seed:parseInt($('fpseed').value)||undefined,tz:$('etz').value.trim(),lang:$('elang').value,
  fp:{cores:$('fpcores').value,mem:$('fpmem').value,sw:($('fpscr').value.split('x')[0]||''),sh:($('fpscr').value.split('x')[1]||''),gpu:$('fpgpu').value,canvas:$('fpcv').checked,audio:$('fpau').checked,webrtc:$('fprtc').value},
  autoclick:{on:$('eac').checked,rules:$('eacr').value},notify:$('ent').checked,scripts:[...$('esl').querySelectorAll('input:checked')].map(x=>x.value)});
  if(r&&r.error){await api.alert(r.error);return}$('edit').hidden=true;refresh();if(r&&r.note)await api.alert(r.note)};
